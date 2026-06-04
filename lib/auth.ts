@@ -63,12 +63,9 @@ export function verifyCron(req: Request): void {
 
   const auth = req.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(auth);
-  if (match && safeEqual(match[1].trim(), secret)) return;
-
-  const cronHeader = req.headers.get("x-vercel-cron");
-  if (cronHeader && cronHeader.length > 0) return;
-
-  throw new Unauthorized("cron auth failed");
+  if (!match || !safeEqual(match[1].trim(), secret)) {
+    throw new Unauthorized("cron auth failed");
+  }
 }
 
 function safeEqual(a: string, b: string): boolean {

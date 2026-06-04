@@ -1,5 +1,5 @@
 import type { Identity } from "./auth";
-import { putBlob, deletePrefix, listPrefix } from "./blob";
+import { deleteOne, deletePrefix, listPrefix, putBlob } from "./blob";
 import { BadRequest } from "./errors";
 import {
   buildAutoPath,
@@ -90,7 +90,11 @@ export async function performUpload(input: UploadInput): Promise<UploadResult> {
 }
 
 export function buildPublicUrl(path: string): string {
-  const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") ?? "";
+  const base = process.env.PUBLIC_BASE_URL?.replace(/\/$/, "");
+  if (!base) {
+    console.warn("[sandbox] PUBLIC_BASE_URL not set; returning relative URL");
+    return `/${path}/`;
+  }
   return `${base}/${path}/`;
 }
 
@@ -140,7 +144,7 @@ export async function deletePath(path: string): Promise<void> {
   if (!meta) throw new BadRequest(`unknown path: ${path}`);
   await deletePrefix(`published/${path}/`);
   await deletePrefix(`unpublished/${path}/`);
-  await deletePrefix(`${metaKey(path)}`);
+  await deleteOne(metaKey(path));
 }
 
 async function movePrefix(from: string, to: string): Promise<void> {

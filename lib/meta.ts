@@ -1,7 +1,7 @@
 import { fetchBlobContent, listPrefix, putBlob } from "./blob";
 
 export type SiteType = "auto" | "custom";
-export type SiteStatus = "published" | "unpublished" | "expired";
+export type SiteStatus = "published" | "unpublished";
 export type Source = "slack" | "claude-code";
 
 export type SiteMeta = {

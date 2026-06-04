@@ -94,6 +94,10 @@ if [[ -d "$TARGET" ]]; then
     echo "directory must contain index.html at root" >&2
     exit 2
   fi
+  if ! command -v zip >/dev/null 2>&1; then
+    echo "'zip' command not found. Install zip (e.g. brew install zip) to upload directories." >&2
+    exit 3
+  fi
   tmp_zip="$(mktemp -t sandbox-upload-XXXXXX.zip)"
   trap 'rm -f "$tmp_zip"' EXIT
   ( cd "$TARGET" && zip -qr "$tmp_zip" . )

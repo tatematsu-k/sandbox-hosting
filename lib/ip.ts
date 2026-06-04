@@ -6,11 +6,16 @@ export type IpRule =
 
 export function parseAllowList(raw: string | undefined): IpRule[] {
   if (!raw) return [];
-  return raw
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map(parseRule);
+  const rules: IpRule[] = [];
+  for (const piece of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    try {
+      rules.push(parseRule(piece));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(`[sandbox/ip] skipping invalid allowlist entry "${piece}": ${reason}`);
+    }
+  }
+  return rules;
 }
 
 function parseRule(input: string): IpRule {
@@ -18,8 +23,12 @@ function parseRule(input: string): IpRule {
     const [addrPart, prefixPart] = input.split("/");
     const addr = ipaddr.parse(addrPart);
     const prefix = Number.parseInt(prefixPart, 10);
-    if (Number.isNaN(prefix)) {
+    if (Number.isNaN(prefix) || prefix < 0) {
       throw new Error(`invalid CIDR prefix: ${input}`);
+    }
+    const maxPrefix = addr.kind() === "ipv4" ? 32 : 128;
+    if (prefix > maxPrefix) {
+      throw new Error(`CIDR prefix out of range: ${input}`);
     }
     return { kind: "cidr", addr, prefix };
   }

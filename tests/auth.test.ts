@@ -78,6 +78,13 @@ describe("verifySlack", () => {
     await expect(verifySlack(req, body)).rejects.toThrow(Unauthorized);
   });
 
+  it("rejects when required headers are missing", async () => {
+    const req = new Request("https://example.com/api/slack/upload", {
+      method: "POST",
+    });
+    await expect(verifySlack(req, "user_name=x")).rejects.toThrow(Unauthorized);
+  });
+
   it("rejects tampered body", async () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const body = "user_name=tatematsu";

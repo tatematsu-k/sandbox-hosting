@@ -4,7 +4,12 @@ const PATH_RE = /^[a-z0-9][a-z0-9_-]{1,63}$/;
 const USERNAME_RE = /^[a-z0-9][a-z0-9_-]{0,38}$/;
 
 export function normalizeUsername(raw: string): string {
-  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "-").slice(0, 39) || "anon";
+  const cleaned = raw
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .slice(0, 39);
+  return cleaned || "anon";
 }
 
 export function validateUsername(username: string): string {

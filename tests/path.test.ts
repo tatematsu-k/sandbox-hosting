@@ -20,6 +20,15 @@ describe("normalizeUsername", () => {
     const long = "a".repeat(80);
     expect(normalizeUsername(long).length).toBe(39);
   });
+
+  it("strips leading non-alphanumeric so the result passes validation", () => {
+    expect(normalizeUsername(".tatematsu")).toBe("tatematsu");
+    expect(normalizeUsername("--foo")).toBe("foo");
+  });
+
+  it("returns anon when everything would be stripped", () => {
+    expect(normalizeUsername("...")).toBe("anon");
+  });
 });
 
 describe("validateUsername", () => {

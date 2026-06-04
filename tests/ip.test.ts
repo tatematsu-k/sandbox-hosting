@@ -13,6 +13,12 @@ describe("parseAllowList", () => {
     expect(rules[0].kind).toBe("single");
     expect(rules[1].kind).toBe("cidr");
   });
+
+  it("skips malformed entries instead of throwing", () => {
+    const rules = parseAllowList("203.0.113.5, not-an-ip, 198.51.100.0/24, 1.2.3.4/64");
+    expect(rules).toHaveLength(2);
+    expect(rules.map((r) => r.kind)).toEqual(["single", "cidr"]);
+  });
 });
 
 describe("isAllowed", () => {

@@ -13,6 +13,21 @@ const MAX_PATH_LEN = 256;
 
 const SAFE_PATH_RE = /^[A-Za-z0-9_.\-\/]+$/;
 
+export function sanitizeZipPath(rawPath: string): string {
+  const relative = rawPath.replace(/^\.\//, "").replace(/^\//, "");
+  if (relative.length === 0) throw new BadRequest("empty zip path");
+  if (relative.length > MAX_PATH_LEN) throw new BadRequest("zip path too long");
+  if (relative.includes("\0")) throw new BadRequest("zip path contains null byte");
+  if (relative.includes("..")) throw new BadRequest(`zip path traversal: ${relative}`);
+  if (relative.split("/").some((seg) => seg === "" || seg === ".")) {
+    throw new BadRequest(`zip path contains empty or self segment: ${relative}`);
+  }
+  if (!SAFE_PATH_RE.test(relative)) {
+    throw new BadRequest(`zip path contains unsafe characters: ${relative}`);
+  }
+  return relative;
+}
+
 export async function extractZip(buffer: Buffer): Promise<ExtractedFile[]> {
   const dir = await unzipper.Open.buffer(buffer);
   const out: ExtractedFile[] = [];
@@ -23,13 +38,7 @@ export async function extractZip(buffer: Buffer): Promise<ExtractedFile[]> {
     if (entry.type !== "File") continue;
     if (out.length >= MAX_FILES) throw new BadRequest("zip contains too many files");
 
-    const relative = entry.path.replace(/^\.\//, "").replace(/^\//, "");
-    if (relative.length > MAX_PATH_LEN) throw new BadRequest("zip path too long");
-    if (relative.includes("..")) throw new BadRequest(`zip path traversal: ${relative}`);
-    if (!SAFE_PATH_RE.test(relative)) {
-      throw new BadRequest(`zip path contains unsafe characters: ${relative}`);
-    }
-
+    const relative = sanitizeZipPath(entry.path);
     const data = await entry.buffer();
     total += data.length;
     if (total > MAX_TOTAL_BYTES) throw new BadRequest("zip extracted size too large");
