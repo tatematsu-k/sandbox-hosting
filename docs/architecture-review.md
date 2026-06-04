@@ -1,246 +1,186 @@
-# Architecture Review — Sandbox Hosting
+# Architecture Review — Sandbox Hosting (AWS-A)
 
 - Reviewer: Claude (Opus 4.7)
 - Date: 2026-06-05
-- Target: commit `ebebe1b`
-- Scope: Security / Authn-Authz / SLO / Cost
+- Target: commit `7e0964b` (AWS-A migration)
+- Scope: Security / Authn-Authz / SLO / Cost / Operations
+- Vercel期のレビュー: [architecture-review-vercel-era.md](architecture-review-vercel-era.md)
 
 ## TL;DR
 
 | 領域 | 状態 | 主要リスク |
 | --- | --- | --- |
-| Security | ⚠️ 1 Critical, 3 High | **Blob 直URL で IP allowlist を迂回可能**（最重要） |
-| Authn / Authz | ⚠️ 1 High, 2 Med | 単一共有 `UPLOAD_TOKEN` で username spoofable / `scope=all` 制限なし |
-| SLO | ℹ️ 設計だけ完了 | 観測性ゼロ、cron 失敗を検知できない |
-| Cost | 🟢 Pro tier で月 ~$20 | bandwidth tail risk（hot-link で青天井） |
+| Security | 🟢 1 High, 4 Med | 単一共有 `UPLOAD_TOKEN`、API GW に WAF 未導入 |
+| Authn / Authz | 🟢 1 High, 1 Med | `X-Sandbox-User` の client claim 問題は AWS でも残る |
+| SLO | 🟢 概ね良好 | 観測項目はあるが alarm 抑制設定が不足 |
+| Cost | 🟢 約 $2/mo | bandwidth tail risk は CloudFront 経由でも残る |
+| Operations | 🟡 整備中 | Terraform state 集中管理・WAF未導入が次の山場 |
 
-詳細を以下に示す。
+Vercel 期に比べて以下が **構造的に解消**:
+- ✅ Blob 直URL 迂回 → S3 private + OAC で完全遮断
+- ✅ 秘密情報の保存・ローテーション → SSM SecureString + KMS
+- ✅ 観測性ゼロ → CloudWatch Logs + Alarms + SNS
 
 ---
 
 ## 1. Security
 
-### S-1 ⛔ Critical: Blob 直URLで IP allowlist を迂回できる
+### S-1 🟡 Med: WAF 未導入（rate limit と DDoS 防御が薄い）
 
 **現状**
-
-- `lib/blob.ts` の `putBlob` は `access: "public"` + `addRandomSuffix: false` を使用。
-- 結果: `https://{store-id}.public.blob.vercel-storage.com/published/{path}/index.html` が完全に予測可能で、誰でも直アクセスできる。
-- middleware は **このサーバを経由しない** Blob CDN への直接アクセスを止められない。
-
-**Impact**
-
-- IP allowlist が設計上の砦だが、実質「URL知ってる人なら誰でも閲覧可能」。
-- 個人 sandbox とはいえ、社外秘の PoC や顧客名入りの資料を上げると外部流出する。
-
-**Mitigation 候補（推奨順）**
-
-1. **Blob を private にする**（`@vercel/blob` ≥ 2.x で対応。現在 0.27.0 → アップグレード必要）。サーバが signed URL を生成して返す。
-2. **`addRandomSuffix: true`** に戻し、`meta/{path}.json` に actual URL を保存。URLは推測不能（128bit級）になる。簡易だがあくまで obscurity。
-3. **Cloudflare Worker / Vercel Edge Network 前段にカスタムドメインを置き**、Blob URL を完全に隠蔽（追加コストあり）。
-
-→ v0.5 で (1) または (2) を採用、現状は **README で「Blob URLは漏らせば誰でも閲覧可」と明示**して限定運用すべき。
-
-### S-2 🔴 High: アップロードされた HTML が same-origin で実行される
-
-- 任意の JavaScript / iframe / form を含む HTML を public path に置く。
-- 将来 `/api/*` に Cookie認証等が入ると CSRF / セッション窃盗の温床になる。
-- 現状でも、悪意あるHTMLが `fetch('/api/list', { headers: {...} })` を試みる経路は閉じてある（Bearer は CookieJar に入らない）ので **今は緊急性は低い**。
+- API Gateway HTTP API の throttling は burst 50 / rate 25 リクエスト/秒（設定済み）
+- CloudFront 側はマネージドルール無し
+- 攻撃者が `UPLOAD_TOKEN` を入手した場合、API GW throttling 単独でしか守れない
 
 **Mitigation**
+- AWS WAF v2 を CloudFront に associate → IPレートリミット & マネージドルール（Core Rule Set, KnownBadInputs）
+- API GW にも WAF を関連付け可能
+- 月額 +$6（Web ACL $5 + ルール $1）
 
-- 将来サブドメインを分離（例: `sandbox.example.com` → 配信、`api.example.com` → 認証付き API）。
-- 配信ルートに **`Content-Security-Policy: sandbox allow-scripts allow-forms`** を付与すると same-origin escape を制限できる。
+### S-2 🟡 Med: `UPLOAD_TOKEN` は依然として単一共有秘密
 
-### S-3 🔴 High: レートリミットが完全に欠落
-
-- `/api/upload` `/api/list` `/api/delete` `/api/slack/upload` いずれも 1秒あたりの上限なし。
-- 攻撃者が `UPLOAD_TOKEN` を入手すれば数秒で Blob を埋め尽くせる（容量・課金ともに）。
-- IP制限下でも、社内端末が踏み台になった場合は壁にならない。
-
-**Mitigation**
-
-- 短期: Vercel Firewall の rate limit ルール（`/api/*` で 60req/min 等）。
-- 中期: `@upstash/ratelimit` などで token + IP 単位の sliding window を実装。
-
-### S-4 🔴 High: zip bomb の総量チェックは入っているが時間制限がない
-
-- `MAX_TOTAL_BYTES = 10MB` は OK。
-- ただし unzipper の deflate は CPU bound。極端なエントロピーで 60s function 時間を食い潰す DoS は可能。
+- SSM 化により安全に保管できるようになったが、複数ユーザー間で共有される構造は同じ
+- 漏洩時は全クライアントを一斉ローテーションする必要
 
 **Mitigation**
+- 短期: SSM パスを `/sandbox-hosting/tokens/{username}` 配下に分けて配布・検証
+- 中期: API GW Lambda Authorizer + DynamoDB 内のトークンテーブル
+- 長期: Amazon Cognito User Pool + JWT
 
-- 解凍前に `entry.uncompressedSize` を見てスキップ判定（unzipper API で取れる）。
-- ファイルあたり 5MB の独立上限を設ける（現状: 合計 10MB のみ）。
+### S-3 🟡 Med: CloudFront Function 内の IP allowlist は デプロイ時固定
 
-### S-5 🟡 Med: 観測性ゼロ（ログ・アラート無し）
-
-- `console.error` のみ。Vercel Logs は 1h で expire。
-- 失敗を後追いできない。
-
-**Mitigation**
-
-- Vercel Log Drains で Datadog/Logflare へ転送。
-- 主要メトリクス: `upload_count{source,status}`, `view_count{status}`, `cron_runs{result}`.
-
-### S-6 🟡 Med: `meta/*.json` が public access
-
-- `meta/{path}.json` も Blob public で置いている。`addRandomSuffix: false` なので予測可能。
-- 内部 owner/source/createdAt が公開状態になる。
+- Terraform で `viewer-request.js` に IP リストを埋め込み、CloudFront にデプロイ
+- IP変更には `terraform apply` 必須 → 即時対応に時間がかかる
+- 一方、SSM Parameter Store からの動的取得は CloudFront Function ではできない（外部 IO 不可）
 
 **Mitigation**
+- 緊急変更が必要な場合: Lambda@Edge に切り替えると SSM/DynamoDB 参照可能（CPU/価格上がる）
+- もしくは IP allowlist を CloudFront WAF IP set に移管 → SDK/API で即時更新可
 
-- 設計上 meta は server-only。Blob private 化 (S-1) と同時に対処。
+### S-4 🟢 Low: `viewer-request.js` の手書き CIDR/IPv6 パーサ
+
+- 自前実装。テスト不在。
+- 設計上は単純だが、edge case で誤判定して **意図せず通してしまう** リスク
+
+**Mitigation**
+- 既知の有効/無効 IP に対する自動テスト（Node から AWS CloudFront テスト関数を呼ぶ or pure JS のままユニットテストできるようリファクタ）
+
+### S-5 🟢 Low: S3 lifecycle で旧バージョンは消えるが、現行版の長期保存ポリシーがない
+
+- バージョニング ON、非カレント版は 30日で削除（lifecycle.tf）
+- カレント版に対する世代管理ポリシーは無いため、誤削除や悪意による削除はバージョン保存ぶん復旧可
+
+**Mitigation**
+- 現状で OK（個人 sandbox なら十分）
+- 業務利用なら MFA delete / Object Lock を検討
 
 ---
 
 ## 2. Authentication / Authorization
 
-### A-1 🔴 High: `UPLOAD_TOKEN` は全員共通の単一秘密
+### A-1 🔴 High: `X-Sandbox-User` ヘッダは client claim のまま
 
-- ローテーションは全クライアントを一斉切り替えするしかない。
-- 1人がうっかり GitHub にコミット → 全員リセット。
-
-**Mitigation**
-
-- 短期: ENV を `UPLOAD_TOKENS=tok1:user1,tok2:user2,...` のリスト化、verifyBearer 内で match。
-- 中期: KMS or Vercel KV/Marketplace KV に key→user_id mapping を保存。
-- 長期: OIDC（Sign in with Vercel）or magic link → 短命 JWT 発行。
-
-### A-2 🟡 Med: `X-Sandbox-User` ヘッダは client claim
-
-- Bearer が正しければ任意の username を名乗れる。
-- `owner !== identity.username` の owner check は **善意の運用前提**。
-- Slack 経路は HMAC payload から user_name を取るのでこちらは安全。
+- Bearer が一致すれば任意の username を名乗れる
+- owner一致チェック (activate/delete) は **善意ベース**
 
 **Mitigation**
+- Per-user token に移行（S-2と同時対処）
+- 暫定対応: API GW Lambda Authorizer で username をクレームに含むカスタムトークン形式に切り替え
 
-- (A-1) の per-user token に切り替えれば自動的に解決（token→user の固定 mapping）。
+### A-2 🟡 Med: `scope=all` に admin 制限が無い
 
-### A-3 🟡 Med: `scope=all` で誰でも全サイト列挙可能
+- Bearer token の所有者なら誰でも全サイトを enumerate 可能
+- `ADMIN_USERS` 環境変数による whitelist 検証を追加すべき
 
-- メンバー間ではOK、外部委託者には危ない。
-- 仕様としてallow設計でも、`scope=all` は admin role を別途要求する設計が望ましい。
-
-**Mitigation**
-
-- 環境変数 `ADMIN_USERS=tatematsu,foo` 等で whitelist。一致しなければ `scope=all` を `scope=mine` に降格。
-
-### A-4 ✅ OK: Slack 認証
-
-- HMAC-SHA256 + 5min replay window + timing-safe compare。
-- Slack 公式ガイドラインに準拠。
-
-### A-5 ✅ OK: Cron 認証（Cycle 1 修正後）
-
-- Bearer `CRON_SECRET` 必須に修正済み。spoofable ヘッダ依存を廃止。
+### A-3 ✅ OK: Slack 署名検証（HMAC + 5分 window + timing-safe）
+### A-4 ✅ OK: Cron は IAM 経由（EventBridge → Lambda）でゼロトラスト
 
 ---
 
 ## 3. SLO
 
-### S目標（提案）
+### 観測ベースライン
 
 | 指標 | 目標 | 現状の実装 |
 | --- | --- | --- |
-| Read availability | 99.9% / 30d | Vercel Functions + Blob = 計算上 99.99% |
-| Read latency P50 | < 200ms | `dynamic = "force-dynamic"` で Blob 2-hop |
-| Read latency P95 | < 800ms | Blob fetch + serialize で実測 600-1000ms 想定 |
-| Write availability | 99.5% / 30d | Function + Blob × 2 (HTML + meta) |
-| Cron success rate | 99% / 30d | 失敗時に再試行・通知なし |
+| 公開配信 availability | 99.9% / 30d | CloudFront + S3 = SLA 99.99% |
+| API availability | 99.5% / 30d | API GW + Lambda = SLA 99.95% |
+| 配信 P50 latency | < 100ms | CloudFront キャッシュヒット時 < 50ms 想定 |
+| 配信 P95 latency | < 300ms | キャッシュミス + S3 fetch |
+| API P95 latency | < 1s | Lambda cold start 含む |
+| Cron 成功率 | 99% | CloudWatch alarm 設定済み |
 
-### SLO-1 🟡 Med: 配信が常に `force-dynamic`
+### SLO-1 🟡 Med: アラームの抑制 (suppression) 設定なし
 
-- 全 view リクエストが function を呼び、Blob を fetch する → 二重トラフィック・課金。
-- IP allowlist チェックがあるので CDN cache はできない（IP 単位で edge cache 必要）。
-
-**Mitigation**
-
-- Vercel の **Cache Components / runtime cache** を使い、`(path, file)` キーで 60s ほどキャッシュ。Blob fetch 削減 & latency 改善。
-
-### SLO-2 🟡 Med: 観測ゼロ → SLO 計測不可能
-
-- Vercel Analytics は user-facing メトリクスのみ。
-- 関数レベルのlatency / error rate / 5xx率 を Datadog 等で計測すべき。
-
-### SLO-3 🟢 OK: コンカレンシ
-
-- Vercel Functions の Fluid Compute は同一インスタンスで複数リクエスト処理可能。コールドスタートはほぼ無視できる。
-- Blob: 公称 10k req/min。個人用途では十分。
-
-### SLO-4 🔴 High: Cron 失敗が無検知
-
-- `expire-ttl` cron が失敗してもどこにも通知が行かない。
-- TTL 期限切れサイトが残り続け、想定外の公開状態になる。
+- `api_5xx` alarm は 5分間に 5件超で発火
+- 連続発火時の SNS スパムを防ぐ throttling/composite alarm が無い
 
 **Mitigation**
+- Composite Alarm で OK/Alarm 状態遷移時のみ通知
+- もしくは EventBridge Pipes 経由で重複抑制
 
-- Cron 完了時にチェックインを `healthchecks.io` / `Better Stack` に POST。
-- Vercel Log Drains で `[sandbox/cron]` プレフィックスをアラート設定。
+### SLO-2 🟢 OK: ログは CloudWatch に集約
+
+- Lambda 実行ログは `/aws/lambda/{name}` に 30日保持
+- API GW アクセスログは JSON 形式で構造化済み
+
+### SLO-3 🟢 OK: Cold start 影響は限定的
+
+- API Lambda 512MB / 30s。Bundle ~1MB。
+- Init ~150-300ms 想定。継続呼び出し（実用上）はキャッシュ済みインスタンスを使う
 
 ---
 
 ## 4. Cost
 
-### Vercel pricing model（2026, Pro tier 想定）
+### 90k views/mo シナリオでの内訳
 
-| Resource | 単価 | 個人想定 (100 sites, 30 views/day each) |
+| 項目 | 月額 | 備考 |
 | --- | --- | --- |
-| Plan base | $20/user/mo | $20 |
-| Function invocations | $0.20/M | (100 upload + 3,000 view + 30 cron op)/月 ≈ < $0.001 |
-| Function Active CPU | $0.18/h | 〃 ≈ ~$0.05 |
-| Blob storage | $0.023/GB-mo | 100×100KB = 10MB → $0.0002 |
-| Blob ops | $0.36/M | ~$0.001 |
-| Blob bandwidth | $0.10/GB | 3,000 views × 100KB × 30 = 900MB → $0.09 |
-| **Total / mo** | | **~$20.15** |
+| Lambda invocations | <$0.01 | 95k req/mo、無料枠内 |
+| Lambda 実行時間 | $0.10 | 平均 250ms × 256MB |
+| API Gateway HTTP API | $0.10 | $1/M req |
+| S3 storage 10MB | <$0.01 | |
+| S3 PUT/GET | <$0.01 | |
+| DynamoDB on-demand | <$0.01 | |
+| CloudFront egress 9GB (Tokyo) | $1.03 | $0.114/GB |
+| CloudFront HTTPS 95k req | $0.11 | $0.012/10k |
+| CloudFront Function | <$0.01 | $0.10/M |
+| EventBridge cron | $0.00 | 30 events/mo |
+| Route 53 hosted zone | $0.50 | (任意) |
+| **合計** | **~$1.85** | Route 53 なしなら ~$1.35 |
 
-→ 個人〜小チーム規模ではフラットに $20/mo + α。
+### C-1 🟡 Med: bandwidth tail risk
 
-### C-1 🔴 High: bandwidth tail risk
-
-- 1サイトがhotlink/SNS拡散すると一気に GB/TB 規模に。
-- 例: 1ページ 500KB × 100k views = 50GB = **$5** (許容範囲)。1M views = **$50**。
-- 攻撃シナリオ: 漏洩した Blob URL に対して継続的 GET → 月単位で数百ドル。
-
-**Mitigation**
-
-- Vercel Firewall で rate limit + Anomaly Detection。
-- 配信ルートに `Cache-Control: max-age=60` + Edge cache。同一クライアントの再フェッチ削減。
-- (S-1) を解消すれば直 Blob URL アクセスを止められる → bandwidth は Function 経由のみになる。
-
-### C-2 🟡 Med: function 二重トラフィック
-
-- `app/[...path]/route.ts` で Blob を fetch → クライアントに返却。Vercel 側で Blob→Function と Function→Client の2方向で bandwidth 計上。
-- 個人規模では誤差だが、views 増えると効く。
+- Hot link 想定: 1サイト × 100k views = 50GB = **$5.70/mo 追加**
+- 暴走時の自動制御は無い
 
 **Mitigation**
+- CloudFront 上に WAF rate limit ルール（IPあたり 1000req/5min 等）
+- AWS Budgets でアラート設定
 
-- Cache Components で hot path を memoize（同一 path × 60s）。
+### C-2 🟢 OK: アイドル時のコスト
 
-### C-3 🟡 Med: meta storage が線形拡大
+- 閲覧ゼロなら Lambda/API GW/Egress すべてゼロ、SSM/DynamoDB は無料枠内
+- 固定費は Route 53 $0.50/mo のみ（任意）
 
-- `meta/*.json` を毎回 list して全件 read（`listAllMeta`）。
-- 1000 sites 超えると cron 1回あたり 1000 Blob fetch = $0.0003 + latency 3-5s。
+### C-3 🟢 OK: WAF 追加時のコスト
 
-**Mitigation**
-
-- 中規模超えで Upstash Redis / Vercel Marketplace KV に meta index を移管。
-
-### C-4 🟢 OK: idle cost
-
-- view が無ければほぼ $0 (Pro base のみ)。
+- 月 +$6 程度。S-1 mitigation のため、トラフィック増えたら追加推奨
 
 ---
 
-## 5. Operational gaps
+## 5. Operations
 
-| ID | 区分 | 内容 |
-| --- | --- | --- |
-| O-1 | バックアップ | Blob のスナップショット運用なし。誤 delete でロスト |
-| O-2 | 監査ログ | upload/delete の who/when を別ストレージに残してない（meta のみ） |
-| O-3 | DR | リージョン全断時の手順なし |
-| O-4 | CICD | テスト/型/lint の CI 未整備（次フェーズで対応） |
-| O-5 | Secret rotation | 手順ドキュメント未整備 |
+| ID | 区分 | 内容 | 状態 |
+| --- | --- | --- | --- |
+| O-1 | Terraform state | local state が初期値。team 運用は S3 backend 必須 | backend.tf.example を提供済み |
+| O-2 | バックアップ | S3 versioning + DynamoDB PITR で実用上 OK | ✅ |
+| O-3 | 監査ログ | CloudTrail 別途設定推奨 | ❌ 未対応 |
+| O-4 | Disaster Recovery | ap-northeast-1 リージョン障害時の手順なし | ❌ 未対応 |
+| O-5 | Secret rotation | 手順は docs にあるが自動化なし | ⚠️ 半対応 |
+| O-6 | 監視ダッシュボード | CloudWatch dashboard 未作成 | ❌ 未対応 |
+| O-7 | CI/CD | Terraform plan を PR に sticky comment | ✅ |
 
 ---
 
@@ -248,19 +188,20 @@
 
 | 優先 | アクション | 想定工数 |
 | --- | --- | --- |
-| 即時 | README に Blob URL 直アクセスのリスクを明記 (S-1) | 15min |
-| 即時 | Vercel Firewall で `/api/*` に rate limit ルール (S-3) | 30min |
-| 即時 | Cron failure を healthchecks.io へチェックイン (SLO-4) | 30min |
-| 1週内 | Per-user token (A-1, A-2) | 半日 |
-| 1週内 | CSP + sandbox 配信 (S-2) | 半日 |
-| 1ヶ月内 | `@vercel/blob` を 2.x へ上げて private access に移行 (S-1, S-6) | 1日 |
-| 1ヶ月内 | Cache Components で配信 cache (SLO-1, C-2) | 半日 |
-| 任意 | Datadog / Logflare 連携 (SLO-2, S-5) | 半日 |
+| 即時 | AWS Budgets で月次アラート (50% / 80% / 100%) | 15min |
+| 即時 | CloudWatch Dashboard を Terraform で 1枚作成 | 30min |
+| 1週内 | WAF v2 ACL + rate limit + Core Rule Set (S-1, C-1 対策) | 半日 |
+| 1週内 | `viewer-request.js` の CIDR パーサに pure JS ユニットテスト (S-4) | 2h |
+| 1ヶ月内 | per-user token (S-2, A-1) | 1日 |
+| 1ヶ月内 | IP allowlist を WAF IP set へ移管 + SSM 動的更新 (S-3) | 半日 |
+| 任意 | CloudTrail + Audit log dashboard (O-3) | 半日 |
+| 任意 | 別リージョン読み取りフェイルオーバ (O-4) | 1日 |
 
 ---
 
 ## 7. 結論
 
-- **個人用 sandbox としての設計意図**は適切で、用途とのギャップは小さい。
-- 一方で **「IP allowlist の砦」が Blob 直URL で迂回されている** 点は、用途と矛盾する致命的ギャップ。
-- Per-user token 化と Blob private 化の 2 点を次回 PR で対処すれば、用途とセキュリティ要件は揃う。
+- AWS-A 移行により **Vercel 期の Critical 1 件 + High 4 件のうち 3 件が構造的に解消**（Blob bypass、観測性、secret管理）
+- 残課題は **共有 token と WAF 未導入** の 2 点が中心 → どちらも対応容易
+- 個人 sandbox 用途としては production-ready なベースライン
+- 1ヶ月以内に WAF + per-user token を入れれば、業務利用にも耐えうる構成になる

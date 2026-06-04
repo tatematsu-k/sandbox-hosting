@@ -92,7 +92,7 @@ export async function copyPrefix(from: string, to: string): Promise<number> {
       await client.send(
         new CopyObjectCommand({
           Bucket: bucket,
-          CopySource: `${bucket}/${encodeURIComponent(obj.Key)}`,
+          CopySource: `${bucket}/${encodeS3Key(obj.Key)}`,
           Key: `${toPrefix}${suffix}`,
         }),
       );
@@ -114,6 +114,13 @@ export async function deleteOne(key: string): Promise<void> {
   await client.send(
     new DeleteObjectCommand({ Bucket: config.bucket(), Key: key }),
   );
+}
+
+export function encodeS3Key(key: string): string {
+  return key
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
 }
 
 function isNotFound(err: unknown): boolean {

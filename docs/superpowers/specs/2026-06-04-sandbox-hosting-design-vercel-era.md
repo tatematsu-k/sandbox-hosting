@@ -1,8 +1,11 @@
-# Sandbox Hosting — Design Spec
+# [ARCHIVED] Sandbox Hosting — Design Spec (Vercel era)
+
+> **NOTE**: 当初の Vercel + Vercel Blob 設計です。AWS-A 構成への移行後、ファイル名通り
+> アーカイブ扱いになりました。現行設計は AWS の Terraform コードと README に反映されています。
 
 - Date: 2026-06-04
 - Owner: tatematsu-k
-- Status: Approved (implementation in progress)
+- Status: Archived (superseded by AWS-A migration on 2026-06-05)
 
 ## 1. Purpose
 

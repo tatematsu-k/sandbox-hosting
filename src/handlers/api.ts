@@ -12,7 +12,7 @@ import {
   deletePath,
   performUpload,
 } from "@/src/lib/upload";
-import { listAll, listByOwner } from "@/src/lib/meta";
+import { listAll, listByOwner, readMeta } from "@/src/lib/meta";
 import { parseSlackText } from "@/src/lib/slack-text";
 
 const MAX_HTML_BYTES = 5 * 1024 * 1024;
@@ -53,18 +53,19 @@ async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
     kind = "zip";
     payload = body;
   } else if (contentType.includes("application/json")) {
-    const json = JSON.parse(body.toString("utf-8")) as {
-      html?: string;
-      zipBase64?: string;
-      path?: string;
-    };
-    pathFromJson = json.path;
-    if (typeof json.html === "string") {
+    let parsed: { html?: unknown; zipBase64?: unknown; path?: unknown };
+    try {
+      parsed = JSON.parse(body.toString("utf-8")) as typeof parsed;
+    } catch {
+      throw new BadRequest("invalid JSON body");
+    }
+    if (typeof parsed.path === "string") pathFromJson = parsed.path;
+    if (typeof parsed.html === "string") {
       kind = "html";
-      payload = Buffer.from(json.html, "utf-8");
-    } else if (typeof json.zipBase64 === "string") {
+      payload = Buffer.from(parsed.html, "utf-8");
+    } else if (typeof parsed.zipBase64 === "string") {
       kind = "zip";
-      payload = Buffer.from(json.zipBase64, "base64");
+      payload = Buffer.from(parsed.zipBase64, "base64");
     } else {
       throw new BadRequest("json body must contain `html` or `zipBase64`");
     }
@@ -123,10 +124,11 @@ async function handleActivate(event: APIGatewayProxyEventV2): Promise<APIGateway
   const { path } = safeJsonBody<{ path?: string }>(event);
   if (!path) throw new BadRequest("missing `path`");
 
+  const meta = await readMeta(path);
+  if (!meta) throw new BadRequest(`unknown path: ${path}`);
+  if (meta.owner !== identity.username) throw new Unauthorized("not the owner");
+
   const updated = await activate(path);
-  if (updated.owner !== identity.username) {
-    throw new Unauthorized("not the owner");
-  }
   return json(200, {
     path: updated.path,
     status: updated.status,
@@ -141,7 +143,6 @@ async function handleDelete(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
   const { path } = safeJsonBody<{ path?: string }>(event);
   if (!path) throw new BadRequest("missing `path`");
 
-  const { readMeta } = await import("@/src/lib/meta");
   const meta = await readMeta(path);
   if (!meta) throw new BadRequest(`unknown path: ${path}`);
   if (meta.owner !== identity.username) throw new Unauthorized("not the owner");
@@ -195,7 +196,10 @@ async function fetchSlackFile(url: string): Promise<{ kind: "html" | "zip"; body
   const slackTokenParam = process.env.SLACK_BOT_TOKEN_PARAM;
   if (slackTokenParam && url.startsWith("https://files.slack.com")) {
     const { getSecret } = await import("@/src/lib/secrets");
-    headers.authorization = `Bearer ${await getSecret(slackTokenParam)}`;
+    const token = await getSecret(slackTokenParam);
+    if (token && token !== "REPLACE_ME") {
+      headers.authorization = `Bearer ${token}`;
+    }
   }
   const res = await fetch(url, { headers });
   if (!res.ok) throw new BadRequest(`failed to fetch file: ${res.status}`);

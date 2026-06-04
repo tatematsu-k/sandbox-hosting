@@ -15,7 +15,7 @@ Configured by the user once, e.g. in `~/.config/sandbox-hosting/env`:
 
 ```
 SANDBOX_BASE_URL=https://sandbox.example.com
-SANDBOX_TOKEN=...                # matches Vercel env UPLOAD_TOKEN
+SANDBOX_TOKEN=...                # matches SSM /sandbox-hosting/UPLOAD_TOKEN
 SANDBOX_USER=tatematsu          # optional, default = $USER
 ```
 

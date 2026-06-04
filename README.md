@@ -75,20 +75,34 @@ cd ..
 
 apply 後、以下を手動で実施:
 
-1. Slack signing secret を SSM に投入
+1. **Slack signing secret を SSM に投入** （初期値は `REPLACE_ME` のまま）
    ```bash
    aws ssm put-parameter --name "/sandbox-hosting/SLACK_SIGNING_SECRET" \
      --type SecureString --overwrite --value "<signing secret>"
    ```
 
-2. `UPLOAD_TOKEN` を控える
+2. **（任意）Slack bot token** （files.slack.com のプライベートファイル取得時のみ必要）
+   ```bash
+   aws ssm put-parameter --name "/sandbox-hosting/SLACK_BOT_TOKEN" \
+     --type SecureString --overwrite --value "xoxb-..."
+   ```
+   未設定（`REPLACE_ME` のまま）の場合、Slack 経路の zip 取得は public file のみ対応。
+
+3. **`UPLOAD_TOKEN` を控える**（Claude Code クライアントに配布）
    ```bash
    aws ssm get-parameter --name "/sandbox-hosting/UPLOAD_TOKEN" \
      --with-decryption --query 'Parameter.Value' --output text
    ```
 
-3. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
+4. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
    ACM 証明書を us-east-1 に発行、CloudFront に紐付け（次フェーズで Terraform 拡張予定）
+
+## 既知の制約
+
+- **Slack 3秒タイムアウト**: アップロード処理が cold start + S3 + DynamoDB で 3秒を超えると Slack 側がタイムアウト表示する。warm時は通常 < 1秒。
+- **Slack `<URL>` 形式**: Slack はテキスト中の URL を `<https://...|表示名>` で wrap することがあるが、現状の `parseSlackText` は raw URL のみ対応。`file_url` パラメータ経由を推奨。
+- **Custom path concurrent upload**: 同一 custom path に対する複数同時 upload は競合 → 最後勝ち。普通の運用では発生しない想定。
+- **CloudFront Function サイズ上限 10KB**: IP allowlist の CIDR が極端に多い（数百件超）と上限に当たる可能性。その場合は WAF IP set への移管を検討。
 
 ### クライアント初期設定（各利用者）
 

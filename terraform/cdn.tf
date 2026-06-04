@@ -46,7 +46,8 @@ resource "aws_cloudfront_distribution" "cdn" {
   is_ipv6_enabled = true
   comment         = "${local.name} viewer distribution"
   http_version    = "http2and3"
-  price_class     = "PriceClass_100"
+  # PriceClass_200 includes Tokyo/Singapore/Seoul edges — important for ap-northeast-1 viewers.
+  price_class = "PriceClass_200"
 
   origin {
     domain_name              = aws_s3_bucket.content.bucket_regional_domain_name
@@ -79,10 +80,16 @@ resource "aws_cloudfront_distribution" "cdn" {
     cloudfront_default_certificate = true
   }
 
+  # Translate S3's 403 (objects that don't exist under OAC) into a clean 404 for viewers.
   custom_error_response {
     error_code            = 403
     response_code         = 404
-    response_page_path    = "/published/404.html"
+    error_caching_min_ttl = 0
+  }
+
+  custom_error_response {
+    error_code            = 404
+    response_code         = 404
     error_caching_min_ttl = 0
   }
 }

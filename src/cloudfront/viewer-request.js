@@ -2,9 +2,13 @@
 // IP allowlist + directory index resolution + origin path mapping.
 //
 // Constraints:
-// - ECMAScript 5.1 + a subset of 2016+. No Node APIs.
-// - Single-file, must run in < 1ms.
+// - cloudfront-js-2.0 runtime: ES2015 + a subset of 2016+. No Node APIs.
+// - Single-file, < 10KB compiled, must run in < 1ms.
 // - The ALLOWED_RULES array is templated by Terraform at deploy time.
+//
+// IMPORTANT: this matching logic is duplicated in `src/lib/edge-ip.ts`
+// where it is unit-tested (`tests/edge-ip.test.ts`). When you change
+// the matching algorithm here, change it there too and re-run vitest.
 
 /* TERRAFORM_INJECT_RULES */
 var ALLOWED_RULES = __ALLOWED_RULES__;
