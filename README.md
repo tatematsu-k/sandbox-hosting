@@ -4,7 +4,10 @@ IP制限付きの個人向けHTMLホスティング基盤。Vercel + Vercel Blob
 Slack slash command と Claude Code skill からアップロードする。
 
 - 仕様: [docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md](docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md)
+- アーキテクチャレビュー: [docs/architecture-review.md](docs/architecture-review.md)
+- 運用者ガイド (HTML): [docs/site/index.html](docs/site/index.html)
 - Slack 設定: [docs/slack-setup.md](docs/slack-setup.md)
+- CI/CD 設定: [docs/cicd-setup.md](docs/cicd-setup.md)
 - Claude Code skill: [skills/sandbox-upload/SKILL.md](skills/sandbox-upload/SKILL.md)
 
 ## エンドポイント概要
@@ -50,16 +53,30 @@ npm run dev
 
 ## デプロイ
 
+### 初回（運用者）
+
 ```bash
-vercel link
-vercel env add BLOB_READ_WRITE_TOKEN production
-vercel env add ALLOWED_IPS production
-vercel env add UPLOAD_TOKEN production
-vercel env add SLACK_SIGNING_SECRET production
-vercel env add CRON_SECRET production
-vercel env add PUBLIC_BASE_URL production
+./scripts/setup-vercel.sh    # vercel link + 全 env を対話で投入
 vercel deploy --prod
 ```
+
+### クライアント初期設定（各利用者）
+
+```bash
+./scripts/setup-client.sh    # ~/.config/sandbox-hosting/env を生成
+./scripts/healthcheck.sh     # 公開→閲覧の往復チェック
+```
+
+### 継続的デプロイ
+
+`.github/workflows/` 配下に以下を用意済み:
+
+- `ci.yml`: PR / push で typecheck + test + shellcheck
+- `deploy-preview.yml`: PR 単位で Vercel preview を自動デプロイ + コメント
+- `deploy-production.yml`: main への push で本番デプロイ
+- `cron-healthcheck.yml`: 日次の本番 smoke test
+
+必要な GitHub Secrets は [docs/cicd-setup.md](docs/cicd-setup.md) を参照。
 
 ## テスト
 

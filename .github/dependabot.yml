@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      next:
+        patterns:
+          - "next"
+          - "@vercel/*"
+          - "react"
+          - "react-dom"
+      types:
+        patterns:
+          - "@types/*"
+      dev:
+        patterns:
+          - "vitest"
+          - "typescript"
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly

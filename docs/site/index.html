@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sandbox Hosting — Operator Guide</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --border: #262a35;
+    --text: #e8ebf2;
+    --muted: #9aa3b2;
+    --accent: #7c9cff;
+    --warn: #f0b95f;
+    --bad: #f07d6a;
+    --good: #7ddca9;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 16px/1.65 system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 3rem 1.5rem 2rem;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(180deg, #1c2030 0%, var(--bg) 100%);
+  }
+  header h1 { margin: 0 0 .35rem; font-size: 1.85rem; letter-spacing: .02em; }
+  header p { margin: 0; color: var(--muted); }
+  main {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 2rem 1.5rem 4rem;
+  }
+  section { margin-top: 2.25rem; }
+  h2 {
+    font-size: 1.25rem;
+    margin: 0 0 .75rem;
+    padding-bottom: .35rem;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { margin: 1.25rem 0 .35rem; font-size: 1.02rem; color: var(--accent); }
+  ul, ol { padding-left: 1.25rem; }
+  li { margin-bottom: .25rem; }
+  code {
+    background: #1f2333;
+    border: 1px solid var(--border);
+    padding: .05rem .35rem;
+    border-radius: 4px;
+    font: 0.9em ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+    overflow-x: auto;
+    font: 0.88rem/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: .55rem .75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: #1c2030; font-weight: 600; }
+  tr:last-child td { border-bottom: 0; }
+  .tag {
+    display: inline-block;
+    padding: 0 .45rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: .72rem;
+    color: var(--muted);
+  }
+  .tag.warn { color: var(--warn); border-color: var(--warn); }
+  .tag.bad { color: var(--bad); border-color: var(--bad); }
+  .tag.good { color: var(--good); border-color: var(--good); }
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(124, 156, 255, 0.07);
+    padding: .65rem .9rem;
+    border-radius: 0 6px 6px 0;
+    margin: .85rem 0;
+  }
+  .callout.warn { border-color: var(--warn); background: rgba(240, 185, 95, 0.07); }
+  .callout.bad { border-color: var(--bad); background: rgba(240, 125, 106, 0.07); }
+  .toc {
+    margin: 1.5rem 0 0;
+    padding: 1rem 1.25rem;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .toc ol { margin: .3rem 0; padding-left: 1.4rem; }
+  footer {
+    margin-top: 3rem;
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    font-size: .85rem;
+  }
+  a { color: var(--accent); }
+  a:hover { color: #aabaff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Sandbox Hosting</h1>
+  <p>IP制限付き個人向けHTMLホスティング — 運用者ガイド</p>
+</header>
+
+<main>
+
+<nav class="toc">
+  <strong>目次</strong>
+  <ol>
+    <li><a href="#overview">概要</a></li>
+    <li><a href="#commands">コマンド一覧</a></li>
+    <li><a href="#auto-vs-custom">auto path vs custom path</a></li>
+    <li><a href="#trust">信頼境界・既知リスク</a></li>
+    <li><a href="#runbook">運用ランブック</a></li>
+    <li><a href="#endpoints">エンドポイント仕様</a></li>
+  </ol>
+</nav>
+
+<section id="overview">
+<h2>1. 概要</h2>
+<p>
+  Claude Code や Slack から生成した HTML を、社内IPからのみ閲覧できる sandbox 領域に
+  ワンコマンドで公開するためのツールです。アップロードした HTML は
+  <code>{timestamp}_{username}</code> 形式の自動パス、または <code>{slug}</code> 形式の
+  固定パスで配信されます。
+</p>
+<div class="callout">
+  <strong>用途</strong>: 内部レビュー用のモック共有・PoC・記事下書き・お試しのウェブUIなど。<br>
+  顧客向けの本番配信、認証が必要な業務情報、公開予定の制作物には使わない。
+</div>
+</section>
+
+<section id="commands">
+<h2>2. コマンド一覧</h2>
+<table>
+  <thead>
+    <tr><th>コマンド</th><th>用途</th><th>備考</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>upload</code></td><td>HTMLまたはディレクトリを公開</td><td>ディレクトリは自動でzipに固める</td></tr>
+    <tr><td><code>list</code></td><td>自分の公開サイト一覧</td><td>TTL・状態を一覧</td></tr>
+    <tr><td><code>activate</code></td><td>TTL切れサイトを再公開</td><td>TTLは公開日から+90日リセット</td></tr>
+    <tr><td><code>delete</code></td><td>サイト完全削除</td><td>blob/metaを物理削除</td></tr>
+  </tbody>
+</table>
+
+<h3>Claude Code から</h3>
+<pre><code># 単一HTMLを公開
+./skills/sandbox-upload/scripts/upload.sh ./report.html
+
+# ディレクトリ（index.html必須）
+./skills/sandbox-upload/scripts/upload.sh ./build
+
+# 固定slug指定（上書き）
+./skills/sandbox-upload/scripts/upload.sh --path demo-foo ./report.html
+
+# 一覧 / 再アクティブ / 削除
+./skills/sandbox-upload/scripts/upload.sh list
+./skills/sandbox-upload/scripts/upload.sh activate &lt;path&gt;
+./skills/sandbox-upload/scripts/upload.sh delete   &lt;path&gt;</code></pre>
+
+<h3>Slack から</h3>
+<pre><code>/sandbox &lt;html&gt;
+/sandbox demo-foo &lt;html&gt;
+/sandbox https://files.slack.com/.../site.zip</code></pre>
+</section>
+
+<section id="auto-vs-custom">
+<h2>3. auto path vs custom path</h2>
+<table>
+  <thead>
+    <tr><th></th><th>auto path</th><th>custom path</th></tr>
+  </thead>
+  <tbody>
+    <tr><th>形式</th><td><code>20260605T093000Z_tatematsu</code></td><td><code>demo-foo</code> / 任意slug</td></tr>
+    <tr><th>再上書き</th><td>新規ごとに別URL</td><td>同名にアップロードで上書き</td></tr>
+    <tr><th>TTL</th><td>90日で自動 unpublish</td><td>TTLなし（明示deleteまで残る）</td></tr>
+    <tr><th>典型用途</th><td>その場のレビュー</td><td>共有用の固定URL</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section id="trust">
+<h2>4. 信頼境界・既知リスク</h2>
+<ul>
+  <li><span class="tag good">OK</span> 公開URLは <code>ALLOWED_IPS</code> のIPからのみ middleware で許可される</li>
+  <li><span class="tag good">OK</span> Slack 経路はHMAC署名検証 (5分以内)、Claude Code 経路はBearer token</li>
+  <li><span class="tag warn">Caveat</span> <code>UPLOAD_TOKEN</code> は全クライアントで共通。漏洩したら必ず全員でローテーション</li>
+  <li><span class="tag bad">Known</span> Vercel Blob 直URLは <em>現状 IP制限の対象外</em>。Blob URL が漏れると IP allowlist を迂回される</li>
+  <li><span class="tag warn">Caveat</span> Rate limit 未実装。Vercel Firewall 側で <code>/api/*</code> に IP単位の制限を設定すべき</li>
+</ul>
+<div class="callout warn">
+  詳細な評価は <code>docs/architecture-review.md</code> 参照。Blob private 化、per-user token、CSP 配信の3点を順次対応中。
+</div>
+</section>
+
+<section id="runbook">
+<h2>5. 運用ランブック</h2>
+
+<h3>初回セットアップ（運用者）</h3>
+<pre><code>npm install
+./scripts/setup-vercel.sh        # 対話形式でVercel envを設定
+vercel deploy --prod</code></pre>
+
+<h3>クライアント初期設定（各利用者）</h3>
+<pre><code>./scripts/setup-client.sh        # ~/.config/sandbox-hosting/env を生成
+./scripts/healthcheck.sh         # 公開→閲覧の往復チェック</code></pre>
+
+<h3>TTL切れに気付いたとき</h3>
+<pre><code>./skills/sandbox-upload/scripts/upload.sh list
+./skills/sandbox-upload/scripts/upload.sh activate &lt;path&gt;</code></pre>
+
+<h3>誤って上げてしまったとき</h3>
+<pre><code>./skills/sandbox-upload/scripts/upload.sh delete &lt;path&gt;</code></pre>
+
+<h3>UPLOAD_TOKEN 漏洩時</h3>
+<ol>
+  <li>Vercel dashboard で <code>UPLOAD_TOKEN</code> を再生成（または <code>./scripts/setup-vercel.sh</code> を再実行）</li>
+  <li>再デプロイ <code>vercel deploy --prod</code></li>
+  <li>全クライアントで <code>./scripts/setup-client.sh</code> を再実行</li>
+  <li>不正アップロード分は <code>list scope=all</code> で確認し <code>delete</code></li>
+</ol>
+</section>
+
+<section id="endpoints">
+<h2>6. エンドポイント仕様</h2>
+<table>
+  <thead><tr><th>Method</th><th>Path</th><th>認証</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td>GET</td><td><code>/{path}/[file]</code></td><td>IP allowlist (middleware)</td><td>公開HTML/アセット配信</td></tr>
+    <tr><td>POST</td><td><code>/api/upload</code></td><td>Bearer <code>UPLOAD_TOKEN</code></td><td>Claude Code からアップロード</td></tr>
+    <tr><td>POST</td><td><code>/api/list</code></td><td>同上</td><td>サイト一覧</td></tr>
+    <tr><td>POST</td><td><code>/api/activate</code></td><td>同上 (owner一致)</td><td>再公開 / TTLリセット</td></tr>
+    <tr><td>POST</td><td><code>/api/delete</code></td><td>同上 (owner一致)</td><td>完全削除</td></tr>
+    <tr><td>POST</td><td><code>/api/slack/upload</code></td><td>Slack 署名</td><td>slash command 受け口</td></tr>
+    <tr><td>GET</td><td><code>/api/cron/expire-ttl</code></td><td>Bearer <code>CRON_SECRET</code></td><td>日次 TTL 監視</td></tr>
+  </tbody>
+</table>
+</section>
+
+</main>
+
+<footer>
+  Sandbox Hosting · spec <code>docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md</code>
+</footer>
+
+</body>
+</html>
