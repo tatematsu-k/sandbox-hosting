@@ -88,6 +88,7 @@ terraform -chdir=terraform init -migrate-state
 | `terraform-plan.yml` | PR with terraform/src changes | OIDC で assume role → `terraform plan` → PR にsticky comment |
 | `terraform-apply.yml` | push to main with terraform/src changes | OIDC で assume role → `terraform apply -auto-approve` |
 | `cron-healthcheck.yml` | 日次 04:00 UTC / 手動 | 本番への smoke test |
+| `dependabot-auto-merge.yml` | dependabot PR | `version-update:semver-patch` / `semver-minor` を CI 通過後 squash auto-merge |
 
 ## 5. 環境分離（任意）
 
@@ -104,7 +105,18 @@ terraform/
 
 個人用途では single environment + branch protection で十分なケースが多い。
 
-## 6. 初回 main マージ前のチェックリスト
+## 6. Dependabot 運用
+
+- 設定ファイル: [`.github/dependabot.yml`](../.github/dependabot.yml)
+- スケジュール: npm 週次（月曜 08:00 JST）、Terraform / GitHub Actions 月次
+- グループ化: `@aws-sdk/*` / `@types/*` / dev tooling / security patches
+- 無視ポリシー: `@aws-sdk/*` と `@types/node` の major bump は手動
+- Auto-merge:
+  - [`dependabot-auto-merge.yml`](../.github/workflows/dependabot-auto-merge.yml) が patch/minor の PR を CI 通過後に自動squash merge
+  - **前提**: リポジトリ設定で `Settings → General → Pull Requests → Allow auto-merge` を ON
+  - **前提**: branch protection で `Require status checks to pass before merging` に `CI / test` を含める
+
+## 7. 初回 main マージ前のチェックリスト
 
 - [ ] AWS アカウントで OIDC provider と IAM role を作成
 - [ ] `terraform.tfvars` を編集（allowed_ips など）

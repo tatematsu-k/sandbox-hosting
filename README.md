@@ -3,10 +3,9 @@
 IP制限付きの個人向けHTMLホスティング。AWS S3 + CloudFront + Lambda + DynamoDB 構成。
 Slack slash command と Claude Code skill からアップロードする。
 
-- 仕様: [docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md](docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md)
 - アーキテクチャレビュー: [docs/architecture-review.md](docs/architecture-review.md)
-- Vercel vs AWS 比較: [docs/vercel-vs-aws.md](docs/vercel-vs-aws.md)
 - 運用者ガイド (HTML): [docs/site/index.html](docs/site/index.html)
+- Slack 設定: [docs/slack-setup.md](docs/slack-setup.md)
 - CI/CD 設定: [docs/cicd-setup.md](docs/cicd-setup.md)
 - Claude Code skill: [skills/sandbox-upload/SKILL.md](skills/sandbox-upload/SKILL.md)
 

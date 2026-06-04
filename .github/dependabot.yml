@@ -1,26 +1,114 @@
 version: 2
+
+# Common labels and PR ergonomics applied to every ecosystem.
+# Keep PRs small and grouped; auto-merge handles low-risk patch/minor bumps
+# (see .github/workflows/dependabot-auto-merge.yml).
+
 updates:
+  # ----------------------------------------------------------------------
+  # Node.js dependencies (src/, scripts/, tests/)
+  # ----------------------------------------------------------------------
   - package-ecosystem: npm
     directory: "/"
     schedule:
       interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - npm
+    assignees:
+      - tatematsu-k
+    reviewers:
+      - tatematsu-k
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    versioning-strategy: increase
     groups:
       aws-sdk:
+        applies-to: version-updates
         patterns:
           - "@aws-sdk/*"
+      aws-lambda-types:
+        applies-to: version-updates
+        patterns:
+          - "@types/aws-lambda"
       types:
+        applies-to: version-updates
         patterns:
           - "@types/*"
-      dev:
+        exclude-patterns:
+          - "@types/aws-lambda"
+      dev-tooling:
+        applies-to: version-updates
         patterns:
           - "vitest"
           - "typescript"
           - "esbuild"
+      security-patches:
+        applies-to: security-updates
+        patterns:
+          - "*"
+    ignore:
+      # Major bumps for the lambda runtime SDK go through manual review.
+      - dependency-name: "@aws-sdk/*"
+        update-types: ["version-update:semver-major"]
+      # We pin the Node engine deliberately; let humans drive that.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+
+  # ----------------------------------------------------------------------
+  # Terraform providers and modules
+  # ----------------------------------------------------------------------
   - package-ecosystem: terraform
     directory: "/terraform"
     schedule:
       interval: monthly
+      day: monday
+      time: "08:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - terraform
+    assignees:
+      - tatematsu-k
+    reviewers:
+      - tatematsu-k
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # AWS provider major (5.x -> 6.x) is a manual review gate.
+      - dependency-name: "hashicorp/aws"
+        update-types: ["version-update:semver-major"]
+
+  # ----------------------------------------------------------------------
+  # GitHub Actions workflows
+  # ----------------------------------------------------------------------
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
       interval: monthly
+      day: monday
+      time: "08:00"
+      timezone: Asia/Tokyo
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+    assignees:
+      - tatematsu-k
+    reviewers:
+      - tatematsu-k
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns:
+          - "*"

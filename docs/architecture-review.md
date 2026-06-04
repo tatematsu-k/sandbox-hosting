@@ -4,7 +4,6 @@
 - Date: 2026-06-05
 - Target: commit `7e0964b` (AWS-A migration)
 - Scope: Security / Authn-Authz / SLO / Cost / Operations
-- Vercel期のレビュー: [architecture-review-vercel-era.md](architecture-review-vercel-era.md)
 
 ## TL;DR
 
