@@ -1,64 +1,63 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { createHmac } from "node:crypto";
-import { verifyBearer, verifySlack } from "@/lib/auth";
-import { Unauthorized } from "@/lib/errors";
 
-const ORIGINAL = { ...process.env };
+vi.mock("@/src/lib/secrets", () => ({
+  getSecret: vi.fn(),
+}));
+
+vi.mock("@/src/lib/config", () => ({
+  config: {
+    bucket: () => "bucket",
+    table: () => "table",
+    publicBaseUrl: () => "https://example.com",
+    uploadTokenParam: () => "/sandbox-hosting/UPLOAD_TOKEN",
+    slackSigningSecretParam: () => "/sandbox-hosting/SLACK_SIGNING_SECRET",
+    slackBotTokenParam: () => undefined,
+    region: () => "ap-northeast-1",
+  },
+}));
+
+const { verifyBearer, verifySlack } = await import("@/src/lib/auth");
+const { Unauthorized } = await import("@/src/lib/errors");
+const { getSecret } = await import("@/src/lib/secrets");
+const getSecretMock = vi.mocked(getSecret);
 
 describe("verifyBearer", () => {
   beforeEach(() => {
-    process.env.UPLOAD_TOKEN = "secret-token";
-  });
-  afterEach(() => {
-    process.env = { ...ORIGINAL };
+    getSecretMock.mockResolvedValue("secret-token");
   });
 
-  it("accepts a valid token", () => {
-    const req = new Request("https://example.com/api/upload", {
-      method: "POST",
-      headers: {
-        authorization: "Bearer secret-token",
-        "x-sandbox-user": "Tatematsu",
-      },
-    });
-    expect(verifyBearer(req).username).toBe("tatematsu");
+  it("accepts a valid token", async () => {
+    const id = await verifyBearer("Bearer secret-token", "Tatematsu.K");
+    expect(id.username).toBe("tatematsu-k");
+    expect(id.source).toBe("claude-code");
   });
 
-  it("rejects missing header", () => {
-    const req = new Request("https://example.com/api/upload", { method: "POST" });
-    expect(() => verifyBearer(req)).toThrow(Unauthorized);
+  it("rejects missing header", async () => {
+    await expect(verifyBearer(undefined, "x")).rejects.toThrow(Unauthorized);
   });
 
-  it("rejects wrong token", () => {
-    const req = new Request("https://example.com/api/upload", {
-      method: "POST",
-      headers: { authorization: "Bearer wrong" },
-    });
-    expect(() => verifyBearer(req)).toThrow(Unauthorized);
+  it("rejects wrong token", async () => {
+    await expect(verifyBearer("Bearer wrong", "x")).rejects.toThrow(Unauthorized);
   });
 });
 
 describe("verifySlack", () => {
   beforeEach(() => {
-    process.env.SLACK_SIGNING_SECRET = "slack-secret";
+    getSecretMock.mockResolvedValue("slack-secret");
   });
-  afterEach(() => {
-    process.env = { ...ORIGINAL };
-  });
+
+  function sign(body: string, ts: string): string {
+    return `v0=${createHmac("sha256", "slack-secret").update(`v0:${ts}:${body}`).digest("hex")}`;
+  }
 
   it("accepts a valid HMAC signature", async () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const body = "command=%2Fsandbox&text=hello&user_name=tatematsu";
-    const base = `v0:${ts}:${body}`;
-    const sig = `v0=${createHmac("sha256", "slack-secret").update(base).digest("hex")}`;
-    const req = new Request("https://example.com/api/slack/upload", {
-      method: "POST",
-      headers: {
-        "x-slack-request-timestamp": ts,
-        "x-slack-signature": sig,
-      },
-    });
-    const id = await verifySlack(req, body);
+    const id = await verifySlack(
+      { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+      body,
+    );
     expect(id.username).toBe("tatematsu");
     expect(id.source).toBe("slack");
   });
@@ -66,37 +65,26 @@ describe("verifySlack", () => {
   it("rejects expired timestamps", async () => {
     const ts = String(Math.floor(Date.now() / 1000) - 60 * 10);
     const body = "user_name=tatematsu";
-    const base = `v0:${ts}:${body}`;
-    const sig = `v0=${createHmac("sha256", "slack-secret").update(base).digest("hex")}`;
-    const req = new Request("https://example.com/api/slack/upload", {
-      method: "POST",
-      headers: {
-        "x-slack-request-timestamp": ts,
-        "x-slack-signature": sig,
-      },
-    });
-    await expect(verifySlack(req, body)).rejects.toThrow(Unauthorized);
+    await expect(
+      verifySlack(
+        { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+        body,
+      ),
+    ).rejects.toThrow(Unauthorized);
   });
 
   it("rejects when required headers are missing", async () => {
-    const req = new Request("https://example.com/api/slack/upload", {
-      method: "POST",
-    });
-    await expect(verifySlack(req, "user_name=x")).rejects.toThrow(Unauthorized);
+    await expect(verifySlack({}, "user_name=x")).rejects.toThrow(Unauthorized);
   });
 
   it("rejects tampered body", async () => {
     const ts = String(Math.floor(Date.now() / 1000));
     const body = "user_name=tatematsu";
-    const base = `v0:${ts}:${body}`;
-    const sig = `v0=${createHmac("sha256", "slack-secret").update(base).digest("hex")}`;
-    const req = new Request("https://example.com/api/slack/upload", {
-      method: "POST",
-      headers: {
-        "x-slack-request-timestamp": ts,
-        "x-slack-signature": sig,
-      },
-    });
-    await expect(verifySlack(req, "user_name=evil")).rejects.toThrow(Unauthorized);
+    await expect(
+      verifySlack(
+        { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+        "user_name=evil",
+      ),
+    ).rejects.toThrow(Unauthorized);
   });
 });

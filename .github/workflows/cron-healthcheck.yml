@@ -14,7 +14,8 @@ jobs:
 
       - name: Smoke test deployed instance
         env:
-          SANDBOX_BASE_URL: ${{ secrets.SANDBOX_BASE_URL }}
+          SANDBOX_API_URL: ${{ secrets.SANDBOX_API_URL }}
+          SANDBOX_VIEW_URL: ${{ secrets.SANDBOX_VIEW_URL }}
           SANDBOX_TOKEN: ${{ secrets.SANDBOX_HEALTHCHECK_TOKEN }}
           SANDBOX_USER: github-ci
         run: bash scripts/healthcheck.sh

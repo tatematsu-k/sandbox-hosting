@@ -1,50 +1,115 @@
-# CI/CD セットアップ
+# CI/CD セットアップ (AWS / OIDC)
 
-`./.github/workflows/` 配下のワークフローを動かすために必要な GitHub Secrets / Variables。
+GitHub Actions から AWS にデプロイするための準備。
 
-## 必須 secrets
+## 1. AWS 側: GitHub OIDC プロバイダと IAM ロール
 
-`Settings → Secrets and variables → Actions → New repository secret` で登録する。
+### 1.1 OIDC provider 登録（既にあればスキップ）
 
-| Secret | 取得元 | 用途 |
-| --- | --- | --- |
-| `VERCEL_TOKEN` | <https://vercel.com/account/tokens> | CLI 認証 |
-| `VERCEL_ORG_ID` | `.vercel/project.json` の `orgId` | プロジェクト紐付け |
-| `VERCEL_PROJECT_ID` | `.vercel/project.json` の `projectId` | プロジェクト紐付け |
-| `SANDBOX_BASE_URL` | デプロイ済みURL | 日次healthcheck |
-| `SANDBOX_HEALTHCHECK_TOKEN` | 本番 `UPLOAD_TOKEN` または専用token | healthcheck の Bearer |
+```bash
+aws iam create-open-id-connect-provider \
+  --url https://token.actions.githubusercontent.com \
+  --client-id-list sts.amazonaws.com \
+  --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+```
 
-> ローカルで `vercel link` 後 `cat .vercel/project.json` で `orgId` `projectId` を確認できる。
+### 1.2 デプロイ用 IAM ロール作成
 
-## 任意 environment 設定
+`trust-policy.json`:
 
-`Settings → Environments → New environment → production`:
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Principal": { "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com" },
+    "Action": "sts:AssumeRoleWithWebIdentity",
+    "Condition": {
+      "StringEquals": {
+        "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+      },
+      "StringLike": {
+        "token.actions.githubusercontent.com:sub": "repo:<OWNER>/<REPO>:*"
+      }
+    }
+  }]
+}
+```
 
-- Protection rules: `Required reviewers` を 1人以上設定すると、main への push 後の production deploy を承認待ちにできる
-- 自動デプロイを止めたい場合は `Wait timer` や `Deployment branches` を絞る
+```bash
+aws iam create-role --role-name sandbox-hosting-deploy \
+  --assume-role-policy-document file://trust-policy.json
 
-## ワークフロー一覧
+# 最小権限を理想だが、初期は PowerUser から始めて段階的に絞り込む
+aws iam attach-role-policy --role-name sandbox-hosting-deploy \
+  --policy-arn arn:aws:iam::aws:policy/PowerUserAccess
+aws iam attach-role-policy --role-name sandbox-hosting-deploy \
+  --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+```
+
+権限の最小化指針（次フェーズ）:
+- S3 / DynamoDB / Lambda / API Gateway / CloudFront / EventBridge / SSM Parameter Store / CloudWatch Logs / IAM (project配下のみ) / KMS
+
+## 2. GitHub Secrets
+
+`Settings → Secrets and variables → Actions → New repository secret`
+
+| Secret | 値 |
+| --- | --- |
+| `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::<ACCOUNT_ID>:role/sandbox-hosting-deploy` |
+| `AWS_REGION` | `ap-northeast-1` |
+| `SANDBOX_API_URL` | terraform output `api_endpoint` の値 |
+| `SANDBOX_VIEW_URL` | `https://<cdn_domain>` |
+| `SANDBOX_HEALTHCHECK_TOKEN` | 本番 `UPLOAD_TOKEN` または専用 token |
+
+## 3. Terraform state バックエンド
+
+初回は local state で構築し、後から S3 バックエンドに移行するのが楽。
+
+S3 バックエンドにする場合:
+
+```bash
+aws s3 mb s3://my-tf-state-sandbox-hosting --region ap-northeast-1
+aws dynamodb create-table --table-name my-tf-locks \
+  --attribute-definitions AttributeName=LockID,AttributeType=S \
+  --key-schema AttributeName=LockID,KeyType=HASH \
+  --billing-mode PAY_PER_REQUEST \
+  --region ap-northeast-1
+cp terraform/backend.tf.example terraform/backend.tf
+# 編集
+terraform -chdir=terraform init -migrate-state
+```
+
+## 4. ワークフロー一覧
 
 | File | Trigger | 役割 |
 | --- | --- | --- |
-| `ci.yml` | push to main / pull_request / workflow_call | typecheck・unit test・shellcheck |
-| `deploy-preview.yml` | pull_request | Vercel preview をビルド & デプロイ、PRに自動コメント |
-| `deploy-production.yml` | push to main | CI 通過後に prod デプロイ |
-| `cron-healthcheck.yml` | 毎日 04:00 UTC / 手動 | 本番への smoke test |
+| `ci.yml` | push to main / PR / workflow_call | typecheck・vitest・tf fmt/validate・shellcheck |
+| `terraform-plan.yml` | PR with terraform/src changes | OIDC で assume role → `terraform plan` → PR にsticky comment |
+| `terraform-apply.yml` | push to main with terraform/src changes | OIDC で assume role → `terraform apply -auto-approve` |
+| `cron-healthcheck.yml` | 日次 04:00 UTC / 手動 | 本番への smoke test |
 
-## ローカル動作確認
+## 5. 環境分離（任意）
 
-```bash
-npm run typecheck
-npm test
-bash scripts/healthcheck.sh   # 環境変数を export 済みで
+dev / prod を分ける場合は Terraform workspace か直 directory 分割を採用:
+
+```
+terraform/
+├── envs/
+│   ├── dev/
+│   └── prod/
+└── modules/
+    └── ... (現在の .tf を module 化)
 ```
 
-## 初回 main マージ前の確認チェックリスト
+個人用途では single environment + branch protection で十分なケースが多い。
 
-- [ ] `vercel link` で `.vercel/project.json` を作成
-- [ ] 上表の 5 secrets を GitHub に登録
-- [ ] `vercel deploy` を一度ローカル/手動で実行し、Production 環境が存在することを確認
-- [ ] Vercel Blob ストアを作成し production 環境にリンク
-- [ ] `./scripts/setup-vercel.sh` で env を埋め切る
-- [ ] PR を 1つ作って preview が立ち上がることを確認
+## 6. 初回 main マージ前のチェックリスト
+
+- [ ] AWS アカウントで OIDC provider と IAM role を作成
+- [ ] `terraform.tfvars` を編集（allowed_ips など）
+- [ ] `./scripts/setup-aws.sh` をローカルで成功させる
+- [ ] `aws ssm put-parameter` で Slack signing secret を投入
+- [ ] CloudFront ディストリビューションの propagation を待つ（15-30min）
+- [ ] `./scripts/healthcheck.sh` で 200 が返ることを確認
+- [ ] PR を 1つ作って `terraform-plan.yml` が動くことを確認

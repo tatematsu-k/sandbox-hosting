@@ -1,0 +1,12 @@
+// Copy to backend.tf and edit before `terraform init`.
+// Recommended: store state in S3 with DynamoDB-based locking.
+
+terraform {
+  backend "s3" {
+    bucket         = "your-tf-state-bucket"
+    key            = "sandbox-hosting/terraform.tfstate"
+    region         = "ap-northeast-1"
+    dynamodb_table = "your-tf-locks"
+    encrypt        = true
+  }
+}

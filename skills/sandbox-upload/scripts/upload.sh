@@ -7,9 +7,11 @@ if [[ -f "$CONFIG_FILE" ]]; then
   source "$CONFIG_FILE"
 fi
 
-: "${SANDBOX_BASE_URL:?Set SANDBOX_BASE_URL (or put it in $CONFIG_FILE)}"
+: "${SANDBOX_BASE_URL:?Set SANDBOX_BASE_URL (API GW URL, or put it in $CONFIG_FILE)}"
 : "${SANDBOX_TOKEN:?Set SANDBOX_TOKEN (or put it in $CONFIG_FILE)}"
 SANDBOX_USER="${SANDBOX_USER:-${USER:-anon}}"
+# strip trailing slashes
+SANDBOX_BASE_URL="${SANDBOX_BASE_URL%/}"
 
 CUSTOM_PATH=""
 SUBCMD=""
@@ -57,7 +59,7 @@ case "$SUBCMD" in
     curl "${curl_common[@]}" -X POST \
       -H "Content-Type: application/json" \
       -d '{"scope":"mine"}' \
-      "${SANDBOX_BASE_URL}/api/list"
+      "${SANDBOX_BASE_URL}/list"
     echo
     exit 0
     ;;
@@ -66,7 +68,7 @@ case "$SUBCMD" in
     curl "${curl_common[@]}" -X POST \
       -H "Content-Type: application/json" \
       -d "$(printf '{"path":"%s"}' "$TARGET")" \
-      "${SANDBOX_BASE_URL}/api/activate"
+      "${SANDBOX_BASE_URL}/activate"
     echo
     exit 0
     ;;
@@ -75,7 +77,7 @@ case "$SUBCMD" in
     curl "${curl_common[@]}" -X POST \
       -H "Content-Type: application/json" \
       -d "$(printf '{"path":"%s"}' "$TARGET")" \
-      "${SANDBOX_BASE_URL}/api/delete"
+      "${SANDBOX_BASE_URL}/delete"
     echo
     exit 0
     ;;
@@ -104,11 +106,11 @@ if [[ -d "$TARGET" ]]; then
   curl "${curl_common[@]}" "${path_header[@]}" -X POST \
     -H "Content-Type: application/zip" \
     --data-binary "@${tmp_zip}" \
-    "${SANDBOX_BASE_URL}/api/upload"
+    "${SANDBOX_BASE_URL}/upload"
 else
   curl "${curl_common[@]}" "${path_header[@]}" -X POST \
     -H "Content-Type: text/html; charset=utf-8" \
     --data-binary "@${TARGET}" \
-    "${SANDBOX_BASE_URL}/api/upload"
+    "${SANDBOX_BASE_URL}/upload"
 fi
 echo

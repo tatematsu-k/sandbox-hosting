@@ -36,7 +36,7 @@ prompt() {
   printf -v "$var" '%s' "$input"
 }
 
-prompt base_url "Sandbox base URL" "${existing_base:-https://sandbox.example.com}"
+prompt base_url "Sandbox API base URL (from terraform output api_endpoint)" "${existing_base:-https://abc123.execute-api.ap-northeast-1.amazonaws.com}"
 prompt user "Username to claim on upload" "${existing_user:-${USER:-anon}}"
 
 if [[ -n "$existing_token" ]]; then

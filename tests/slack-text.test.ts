@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseSlackText } from "@/lib/slack-text";
+import { parseSlackText } from "@/src/lib/slack-text";
 
 describe("parseSlackText", () => {
   it("returns empty payload for empty text", () => {

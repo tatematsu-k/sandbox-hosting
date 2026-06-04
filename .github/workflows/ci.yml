@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   test:
-    name: typecheck + tests
+    name: lint + typecheck + tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -20,8 +20,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
           cache: npm
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
 
       - name: Install
         run: npm ci
@@ -32,9 +36,20 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      - name: Lint shell scripts
+      - name: Build Lambda bundles
+        run: npm run build
+
+      - name: Terraform fmt
+        run: npm run lint:tf
+
+      - name: Terraform validate
+        run: |
+          terraform -chdir=terraform init -backend=false
+          terraform -chdir=terraform validate
+
+      - name: shellcheck
         uses: ludeeus/action-shellcheck@2.0.0
         with:
-          ignore_paths: node_modules
+          ignore_paths: node_modules dist
         env:
           SHELLCHECK_OPTS: -e SC1090 -e SC1091

@@ -5,12 +5,9 @@ updates:
     schedule:
       interval: weekly
     groups:
-      next:
+      aws-sdk:
         patterns:
-          - "next"
-          - "@vercel/*"
-          - "react"
-          - "react-dom"
+          - "@aws-sdk/*"
       types:
         patterns:
           - "@types/*"
@@ -18,6 +15,11 @@ updates:
         patterns:
           - "vitest"
           - "typescript"
+          - "esbuild"
+  - package-ecosystem: terraform
+    directory: "/terraform"
+    schedule:
+      interval: monthly
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

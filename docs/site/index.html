@@ -206,14 +206,15 @@
 <section id="trust">
 <h2>4. 信頼境界・既知リスク</h2>
 <ul>
-  <li><span class="tag good">OK</span> 公開URLは <code>ALLOWED_IPS</code> のIPからのみ middleware で許可される</li>
+  <li><span class="tag good">OK</span> 公開URLは Terraform変数 <code>allowed_ips</code> のIPからのみ CloudFront Function が許可する</li>
+  <li><span class="tag good">OK</span> S3 バケットは private + OAC で CloudFront 経由のみアクセス可</li>
   <li><span class="tag good">OK</span> Slack 経路はHMAC署名検証 (5分以内)、Claude Code 経路はBearer token</li>
-  <li><span class="tag warn">Caveat</span> <code>UPLOAD_TOKEN</code> は全クライアントで共通。漏洩したら必ず全員でローテーション</li>
-  <li><span class="tag bad">Known</span> Vercel Blob 直URLは <em>現状 IP制限の対象外</em>。Blob URL が漏れると IP allowlist を迂回される</li>
-  <li><span class="tag warn">Caveat</span> Rate limit 未実装。Vercel Firewall 側で <code>/api/*</code> に IP単位の制限を設定すべき</li>
+  <li><span class="tag good">OK</span> 秘密情報は SSM Parameter Store (SecureString / KMS暗号化) で管理</li>
+  <li><span class="tag warn">Caveat</span> <code>UPLOAD_TOKEN</code> は全クライアントで共通。漏洩したら全員でローテーション</li>
+  <li><span class="tag warn">Caveat</span> API Gateway の rate limit は throttling burst 50 / rate 25 のデフォルト。WAFは未導入</li>
 </ul>
 <div class="callout warn">
-  詳細な評価は <code>docs/architecture-review.md</code> 参照。Blob private 化、per-user token、CSP 配信の3点を順次対応中。
+  詳細な評価は <code>docs/architecture-review.md</code> 参照。per-user token、WAF rate limit ルールが次フェーズの対応候補。
 </div>
 </section>
 
@@ -221,9 +222,10 @@
 <h2>5. 運用ランブック</h2>
 
 <h3>初回セットアップ（運用者）</h3>
-<pre><code>npm install
-./scripts/setup-vercel.sh        # 対話形式でVercel envを設定
-vercel deploy --prod</code></pre>
+<pre><code>aws configure
+cd terraform &amp;&amp; cp terraform.tfvars.example terraform.tfvars  # 編集
+cd ..
+./scripts/setup-aws.sh        # ビルド → terraform apply</code></pre>
 
 <h3>クライアント初期設定（各利用者）</h3>
 <pre><code>./scripts/setup-client.sh        # ~/.config/sandbox-hosting/env を生成
@@ -238,8 +240,11 @@ vercel deploy --prod</code></pre>
 
 <h3>UPLOAD_TOKEN 漏洩時</h3>
 <ol>
-  <li>Vercel dashboard で <code>UPLOAD_TOKEN</code> を再生成（または <code>./scripts/setup-vercel.sh</code> を再実行）</li>
-  <li>再デプロイ <code>vercel deploy --prod</code></li>
+  <li>SSM で再生成
+    <pre><code>aws ssm put-parameter --name /sandbox-hosting/UPLOAD_TOKEN \
+  --type SecureString --overwrite --value "$(openssl rand -hex 32)"</code></pre>
+  </li>
+  <li>Lambda は次回 invoke から新値を fetch する（5分キャッシュ）。即時反映したい場合は <code>aws lambda update-function-configuration</code> で env を上書きしダミー変更</li>
   <li>全クライアントで <code>./scripts/setup-client.sh</code> を再実行</li>
   <li>不正アップロード分は <code>list scope=all</code> で確認し <code>delete</code></li>
 </ol>
@@ -250,13 +255,13 @@ vercel deploy --prod</code></pre>
 <table>
   <thead><tr><th>Method</th><th>Path</th><th>認証</th><th>用途</th></tr></thead>
   <tbody>
-    <tr><td>GET</td><td><code>/{path}/[file]</code></td><td>IP allowlist (middleware)</td><td>公開HTML/アセット配信</td></tr>
-    <tr><td>POST</td><td><code>/api/upload</code></td><td>Bearer <code>UPLOAD_TOKEN</code></td><td>Claude Code からアップロード</td></tr>
-    <tr><td>POST</td><td><code>/api/list</code></td><td>同上</td><td>サイト一覧</td></tr>
-    <tr><td>POST</td><td><code>/api/activate</code></td><td>同上 (owner一致)</td><td>再公開 / TTLリセット</td></tr>
-    <tr><td>POST</td><td><code>/api/delete</code></td><td>同上 (owner一致)</td><td>完全削除</td></tr>
-    <tr><td>POST</td><td><code>/api/slack/upload</code></td><td>Slack 署名</td><td>slash command 受け口</td></tr>
-    <tr><td>GET</td><td><code>/api/cron/expire-ttl</code></td><td>Bearer <code>CRON_SECRET</code></td><td>日次 TTL 監視</td></tr>
+    <tr><td>GET</td><td><code>https://&lt;cdn&gt;/{path}/[file]</code></td><td>CloudFront Function (IP allowlist)</td><td>公開HTML/アセット配信</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/upload</code></td><td>Bearer <code>UPLOAD_TOKEN</code></td><td>Claude Code からアップロード</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/list</code></td><td>同上</td><td>サイト一覧</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/activate</code></td><td>同上 (owner一致)</td><td>再公開 / TTLリセット</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/delete</code></td><td>同上 (owner一致)</td><td>完全削除</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/slack/upload</code></td><td>Slack 署名</td><td>slash command 受け口</td></tr>
+    <tr><td>—</td><td>EventBridge cron</td><td>IAM (events.amazonaws.com)</td><td>日次 TTL 監視 (Lambda 直接呼び出し)</td></tr>
   </tbody>
 </table>
 </section>

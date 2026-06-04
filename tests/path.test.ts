@@ -4,8 +4,8 @@ import {
   normalizeUsername,
   validateCustomPath,
   validateUsername,
-} from "@/lib/path";
-import { BadRequest } from "@/lib/errors";
+} from "@/src/lib/path";
+import { BadRequest } from "@/src/lib/errors";
 
 describe("normalizeUsername", () => {
   it("lowercases and replaces unsafe chars", () => {

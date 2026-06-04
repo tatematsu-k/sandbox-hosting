@@ -1,87 +1,122 @@
-# Sandbox Hosting
+# Sandbox Hosting (AWS)
 
-IP制限付きの個人向けHTMLホスティング基盤。Vercel + Vercel Blob 上で動作し、
+IP制限付きの個人向けHTMLホスティング。AWS S3 + CloudFront + Lambda + DynamoDB 構成。
 Slack slash command と Claude Code skill からアップロードする。
 
 - 仕様: [docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md](docs/superpowers/specs/2026-06-04-sandbox-hosting-design.md)
 - アーキテクチャレビュー: [docs/architecture-review.md](docs/architecture-review.md)
 - Vercel vs AWS 比較: [docs/vercel-vs-aws.md](docs/vercel-vs-aws.md)
 - 運用者ガイド (HTML): [docs/site/index.html](docs/site/index.html)
-- Slack 設定: [docs/slack-setup.md](docs/slack-setup.md)
 - CI/CD 設定: [docs/cicd-setup.md](docs/cicd-setup.md)
 - Claude Code skill: [skills/sandbox-upload/SKILL.md](skills/sandbox-upload/SKILL.md)
 
-## エンドポイント概要
+## アーキテクチャ
+
+```
+Viewer ──HTTPS──► CloudFront ──OAC──► S3 (private)
+                       │
+                       └─ CloudFront Function (viewer-request)
+                            ├─ IP allowlist (CIDR/v4/v6)
+                            └─ URI rewrite (/foo/ → /published/foo/index.html)
+
+Slack / Claude Code ──HTTPS──► API Gateway HTTP API ──► Lambda (api)
+                                                            │
+                                                            ├─ S3 (read/write)
+                                                            ├─ DynamoDB (meta)
+                                                            └─ SSM Parameter Store (secrets)
+
+EventBridge daily ──► Lambda (cron)
+                          └─ scan DynamoDB → unpublish expired
+```
+
+## エンドポイント
 
 | Method | Path | 認証 | 用途 |
 | --- | --- | --- | --- |
-| GET | `/{path}/[file]` | IP allowlist (middleware) | 公開HTML/アセット配信 |
-| POST | `/api/upload` | `Authorization: Bearer ${UPLOAD_TOKEN}` | Claude Code からのアップロード |
-| POST | `/api/list` | 同上 | サイト一覧 |
-| POST | `/api/activate` | 同上 | TTL再開 / unpublish解除 |
-| POST | `/api/delete` | 同上 | 完全削除 |
-| POST | `/api/slack/upload` | Slack signing secret | Slack slash command 受け口 |
-| GET | `/api/cron/expire-ttl` | `X-Vercel-Cron` または `Bearer CRON_SECRET` | 日次TTL監視 |
+| GET | `https://{cdn}/{path}/[file]` | CloudFront Function | 公開HTML/アセット配信 |
+| POST | `https://{api}/upload` | Bearer `UPLOAD_TOKEN` | Claude Code からアップロード |
+| POST | `https://{api}/list` | 同上 | サイト一覧 |
+| POST | `https://{api}/activate` | 同上 (owner一致) | 再公開 / TTLリセット |
+| POST | `https://{api}/delete` | 同上 (owner一致) | 完全削除 |
+| POST | `https://{api}/slack/upload` | Slack 署名 | slash command 受け口 |
 
-## アップロード仕様
+## ストレージレイアウト
 
-- 認証成功時、`X-Sandbox-Path` ヘッダ（または JSON `path` フィールド）に
-  カスタムpathを指定すると、その slug で上書き公開する。
-- 省略した場合は `{ISO8601 timestamp}_{username}` 形式の auto path で
-  新規ページとして公開する。
-- Content-Type:
-  - `text/html` または `text/*` → 単一HTML
-  - `application/zip` → 展開し配下を `published/{path}/...` に保存
-  - `application/json` → `{ "html": "..." }` か `{ "zipBase64": "..." }`
+S3 `${CONTENT_BUCKET}`:
+- `published/{path}/index.html` 他のアセット
+- `unpublished/{path}/...` TTL切れ後の退避
 
-## TTL ルール
-
-- auto path: 90日後に自動で unpublish（`published/` → `unpublished/` に移動）
-- custom path: TTL 対象外
-- `POST /api/activate` で再公開・TTLリセット可能
+DynamoDB `${META_TABLE}`:
+- PK: `path`
+- GSI `owner-index`: PK=`owner`
+- Item: `{path, owner, type, status, createdAt, updatedAt, ttlExpiresAt, files, source}`
 
 ## ローカル開発
 
 ```bash
 npm install
-cp .env.example .env.local
-# .env.local を編集
-npm run dev
+npm run typecheck
+npm test
+npm run build   # esbuild で dist/{api,cron}/index.mjs を生成
 ```
-
-ローカルでBlobを使うには `BLOB_READ_WRITE_TOKEN` を Vercel dashboard か
-`vercel env pull` で取得して `.env.local` に入れる。
 
 ## デプロイ
 
 ### 初回（運用者）
 
 ```bash
-./scripts/setup-vercel.sh    # vercel link + 全 env を対話で投入
-vercel deploy --prod
+aws configure            # アクセスキー or SSO
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# allowed_ips, alarm_email を編集
+cd ..
+./scripts/setup-aws.sh   # ビルド → terraform apply まで一括
 ```
+
+apply 後、以下を手動で実施:
+
+1. Slack signing secret を SSM に投入
+   ```bash
+   aws ssm put-parameter --name "/sandbox-hosting/SLACK_SIGNING_SECRET" \
+     --type SecureString --overwrite --value "<signing secret>"
+   ```
+
+2. `UPLOAD_TOKEN` を控える
+   ```bash
+   aws ssm get-parameter --name "/sandbox-hosting/UPLOAD_TOKEN" \
+     --with-decryption --query 'Parameter.Value' --output text
+   ```
+
+3. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
+   ACM 証明書を us-east-1 に発行、CloudFront に紐付け（次フェーズで Terraform 拡張予定）
 
 ### クライアント初期設定（各利用者）
 
 ```bash
-./scripts/setup-client.sh    # ~/.config/sandbox-hosting/env を生成
-./scripts/healthcheck.sh     # 公開→閲覧の往復チェック
+./scripts/setup-client.sh
+./scripts/healthcheck.sh
 ```
 
 ### 継続的デプロイ
 
-`.github/workflows/` 配下に以下を用意済み:
-
-- `ci.yml`: PR / push で typecheck + test + shellcheck
-- `deploy-preview.yml`: PR 単位で Vercel preview を自動デプロイ + コメント
-- `deploy-production.yml`: main への push で本番デプロイ
+`.github/workflows/`:
+- `ci.yml`: PR / push で typecheck + vitest + terraform fmt/validate + shellcheck
+- `terraform-plan.yml`: PR ごとに terraform plan を sticky comment
+- `terraform-apply.yml`: main push で apply
 - `cron-healthcheck.yml`: 日次の本番 smoke test
 
-必要な GitHub Secrets は [docs/cicd-setup.md](docs/cicd-setup.md) を参照。
+必要な GitHub Secrets / OIDC 設定は [docs/cicd-setup.md](docs/cicd-setup.md) 参照。
+
+## TTL ルール
+
+- auto path (timestamp_username): 90日後に EventBridge cron が unpublish
+- custom path: TTL対象外
+- `POST /activate` で再公開 + TTLリセット
 
 ## テスト
 
 ```bash
-npm run test       # vitest 単体テスト
-npm run typecheck  # TypeScript 型検査
+npm run typecheck   # tsc
+npm test            # vitest
+npm run lint:tf     # terraform fmt -check
 ```

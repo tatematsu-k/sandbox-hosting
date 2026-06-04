@@ -1,0 +1,54 @@
+name: Terraform Apply (main)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+      - "src/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/terraform-apply.yml"
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: tf-apply
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - run: npm ci
+      - run: npm run build
+
+      - name: terraform init
+        run: terraform -chdir=terraform init -input=false
+
+      - name: terraform apply
+        run: terraform -chdir=terraform apply -input=false -auto-approve
+
+      - name: Capture outputs
+        run: terraform -chdir=terraform output -no-color

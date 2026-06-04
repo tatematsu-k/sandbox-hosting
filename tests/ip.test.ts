@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clientIpFromHeaders, isAllowed, parseAllowList } from "@/lib/ip";
+import { clientIpFromHeaders, isAllowed, parseAllowList } from "@/src/lib/ip";
 
 describe("parseAllowList", () => {
   it("parses empty input", () => {

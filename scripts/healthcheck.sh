@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # scripts/healthcheck.sh
-# Quick smoke test against a deployed sandbox-hosting instance.
+# Smoke test against a deployed AWS sandbox-hosting instance.
+# Requires SANDBOX_API_URL (API GW) and SANDBOX_VIEW_URL (CloudFront) to be set,
+# or sources ~/.config/sandbox-hosting/env.
 
 set -euo pipefail
 
-BASE_URL="${SANDBOX_BASE_URL:-}"
+CONFIG_FILE="${SANDBOX_CONFIG:-$HOME/.config/sandbox-hosting/env}"
+[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+
+API_URL="${SANDBOX_API_URL:-${SANDBOX_BASE_URL:-}}"
+VIEW_URL="${SANDBOX_VIEW_URL:-$API_URL}"
 TOKEN="${SANDBOX_TOKEN:-}"
 USER_NAME="${SANDBOX_USER:-healthcheck}"
 
-if [[ -z "$BASE_URL" || -z "$TOKEN" ]]; then
-  echo "ERROR: set SANDBOX_BASE_URL and SANDBOX_TOKEN before running" >&2
+if [[ -z "$API_URL" || -z "$TOKEN" ]]; then
+  echo "ERROR: set SANDBOX_API_URL (or SANDBOX_BASE_URL) and SANDBOX_TOKEN" >&2
   exit 2
 fi
 
@@ -20,21 +26,21 @@ printf '<!doctype html><title>healthcheck</title><h1>%s</h1>' "$(date -u +%FT%TZ
 slug="healthcheck-$(date -u +%Y%m%d)"
 
 echo "==> upload custom-path $slug"
-resp=$(curl -sS -X POST \
+curl -sS -X POST \
   -H "Authorization: Bearer $TOKEN" \
   -H "X-Sandbox-User: $USER_NAME" \
   -H "X-Sandbox-Path: $slug" \
   -H "Content-Type: text/html" \
   --data-binary "@$tmp_html" \
-  "$BASE_URL/api/upload")
-echo "  $resp"
+  "$API_URL/upload"
+echo
 
-echo "==> verify GET /$slug/"
-status=$(curl -sS -o /dev/null -w "%{http_code}" "$BASE_URL/$slug/")
+echo "==> verify GET $VIEW_URL/$slug/"
+status=$(curl -sS -o /dev/null -w "%{http_code}" "$VIEW_URL/$slug/")
 if [[ "$status" == "200" ]]; then
   echo "  HTTP 200 OK"
 else
-  echo "  HTTP $status (unexpected — check ALLOWED_IPS)"
+  echo "  HTTP $status (check ALLOWED_IPS / CloudFront propagation)"
 fi
 
 echo "==> list mine"
@@ -43,5 +49,5 @@ curl -sS -X POST \
   -H "X-Sandbox-User: $USER_NAME" \
   -H "Content-Type: application/json" \
   -d '{"scope":"mine"}' \
-  "$BASE_URL/api/list" | head -c 400
+  "$API_URL/list" | head -c 400
 echo
