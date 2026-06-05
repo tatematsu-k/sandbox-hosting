@@ -85,7 +85,6 @@ terraform -chdir=terraform init -migrate-state
 | File | Trigger | 役割 |
 | --- | --- | --- |
 | `ci.yml` | push to main / PR / workflow_call | typecheck・vitest・tf fmt/validate・shellcheck |
-| `terraform-plan.yml` | PR with terraform/src changes | OIDC で assume role → `terraform plan` → PR にsticky comment |
 | `terraform-apply.yml` | push to main with terraform/src changes | OIDC で assume role → `terraform apply -auto-approve` |
 | `cron-healthcheck.yml` | 日次 04:00 UTC / 手動 | 本番への smoke test |
 | `dependabot-auto-merge.yml` | dependabot PR | `version-update:semver-patch` / `semver-minor` を CI 通過後 squash auto-merge |
@@ -124,4 +123,4 @@ terraform/
 - [ ] `aws ssm put-parameter` で Slack signing secret を投入
 - [ ] CloudFront ディストリビューションの propagation を待つ（15-30min）
 - [ ] `./scripts/healthcheck.sh` で 200 が返ることを確認
-- [ ] PR を 1つ作って `terraform-plan.yml` が動くことを確認
+- [ ] PR を 1つ作って `ci.yml` の typecheck + tests + terraform fmt/validate が green になることを確認

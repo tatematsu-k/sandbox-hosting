@@ -114,7 +114,6 @@ apply 後、以下を手動で実施:
 
 `.github/workflows/`:
 - `ci.yml`: PR / push で typecheck + vitest + terraform fmt/validate + shellcheck
-- `terraform-plan.yml`: PR ごとに terraform plan を sticky comment
 - `terraform-apply.yml`: main push で apply
 - `cron-healthcheck.yml`: 日次の本番 smoke test
 
