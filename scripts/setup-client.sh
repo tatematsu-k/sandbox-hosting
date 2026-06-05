@@ -25,29 +25,29 @@ if [[ -f "$config_file" ]]; then
 fi
 
 prompt() {
-  local var="$1" prompt="$2" default="$3"
+  local label="$1" default="$2"
   local input
   if [[ -n "$default" ]]; then
-    read -rp "$prompt [default: $default]: " input
+    read -rp "$label [default: $default]: " input >&2
     input="${input:-$default}"
   else
-    read -rp "$prompt: " input
+    read -rp "$label: " input >&2
   fi
-  printf -v "$var" '%s' "$input"
+  printf '%s' "$input"
 }
 
-prompt base_url "Sandbox API base URL (from terraform output api_endpoint)" "${existing_base:-https://abc123.execute-api.ap-northeast-1.amazonaws.com}"
-prompt user "Username to claim on upload" "${existing_user:-${USER:-anon}}"
+base_url=$(prompt "Sandbox API base URL (from terraform output api_endpoint)" "${existing_base:-https://abc123.execute-api.ap-northeast-1.amazonaws.com}")
+user=$(prompt "Username to claim on upload" "${existing_user:-${USER:-anon}}")
 
 if [[ -n "$existing_token" ]]; then
   read -rp "Replace existing UPLOAD_TOKEN? [y/N]: " replace
   if [[ "${replace,,}" == "y" ]]; then
-    prompt token "UPLOAD_TOKEN" ""
+    token=$(prompt "UPLOAD_TOKEN" "")
   else
     token="$existing_token"
   fi
 else
-  prompt token "UPLOAD_TOKEN" ""
+  token=$(prompt "UPLOAD_TOKEN" "")
 fi
 
 if [[ -z "$token" ]]; then

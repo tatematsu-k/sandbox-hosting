@@ -18,4 +18,9 @@ jobs:
           SANDBOX_VIEW_URL: ${{ secrets.SANDBOX_VIEW_URL }}
           SANDBOX_TOKEN: ${{ secrets.SANDBOX_HEALTHCHECK_TOKEN }}
           SANDBOX_USER: github-ci
-        run: bash scripts/healthcheck.sh
+        run: |
+          if [[ -z "$SANDBOX_API_URL" || -z "$SANDBOX_TOKEN" ]]; then
+            echo "::notice::SANDBOX_API_URL / SANDBOX_TOKEN not configured — skipping."
+            exit 0
+          fi
+          bash scripts/healthcheck.sh

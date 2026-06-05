@@ -4,7 +4,7 @@ IP制限付きの個人向けHTMLホスティング。AWS S3 + CloudFront + Lamb
 Slack slash command と Claude Code skill からアップロードする。
 
 - アーキテクチャレビュー: [docs/architecture-review.md](docs/architecture-review.md)
-- 運用者ガイド (HTML): [docs/site/index.html](docs/site/index.html)
+- 運用者ガイド: <https://tatematsu-k.github.io/sandbox-hosting/>（ソース: [docs/site/index.html](docs/site/index.html)）
 - Slack 設定: [docs/slack-setup.md](docs/slack-setup.md)
 - CI/CD 設定: [docs/cicd-setup.md](docs/cicd-setup.md)
 - Claude Code skill: [skills/sandbox-upload/SKILL.md](skills/sandbox-upload/SKILL.md)
