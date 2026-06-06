@@ -110,14 +110,15 @@ apply 後、以下を手動で実施:
 ./scripts/healthcheck.sh
 ```
 
-### 継続的デプロイ
+### 継続的インテグレーション
 
 `.github/workflows/`:
 - `ci.yml`: PR / push で typecheck + vitest + terraform fmt/validate + shellcheck
-- `terraform-apply.yml`: main push で apply
-- `cron-healthcheck.yml`: 日次の本番 smoke test
+- `pages.yml`: `docs/site/**` の変更で運用ガイドを GitHub Pages へ自動 deploy
+- `dependabot-auto-merge.yml`: patch / minor の Dependabot PR を CI 通過後に squash auto-merge
 
-必要な GitHub Secrets / OIDC 設定は [docs/cicd-setup.md](docs/cicd-setup.md) 参照。
+本番デプロイは `vercel deploy` ではなくローカルから `./scripts/setup-aws.sh`
+（または `terraform -chdir=terraform apply`）で実行する運用。
 
 ## TTL ルール
 
