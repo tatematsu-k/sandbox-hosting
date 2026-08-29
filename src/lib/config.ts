@@ -16,6 +16,7 @@ export const config = {
   table: () => required("META_TABLE"),
   publicBaseUrl: () => required("PUBLIC_BASE_URL"),
   uploadTokenParam: () => required("UPLOAD_TOKEN_PARAM"),
+  tokensTable: () => required("TOKENS_TABLE"),
   slackSigningSecretParam: () => required("SLACK_SIGNING_SECRET_PARAM"),
   slackBotTokenParam: () => optional("SLACK_BOT_TOKEN_PARAM"),
   region: () => required("AWS_REGION"),
