@@ -9,8 +9,8 @@
 
 | 領域 | 状態 | 主要リスク |
 | --- | --- | --- |
-| Security | 🟢 1 High, 3 Med | API GW に WAF 未導入(単一共有トークン問題は解消) |
-| Authn / Authz | 🟢 1 High, 0 Med | per-user トークンによりクライアント claim 問題を解消 |
+| Security | 🟢 1 High, 2 Med | API GW に WAF 未導入(単一共有トークン問題は解消) |
+| Authn / Authz | 🟢 0 High, 1 Med | per-user トークンで client claim 問題を解消。`scope=all` の admin 制限(A-2)は未対応 |
 | SLO | 🟢 概ね良好 | 観測項目はあるが alarm 抑制設定が不足 |
 | Cost | 🟢 約 $2/mo | bandwidth tail risk は CloudFront 経由でも残る |
 | Operations | 🟡 整備中 | Terraform state 集中管理・WAF未導入が次の山場 |
@@ -76,14 +76,11 @@ Vercel 期に比べて以下が **構造的に解消**:
 
 ## 2. Authentication / Authorization
 
-### A-1 🔴 High: `X-Sandbox-User` ヘッダは client claim のまま
+### A-1 ✅ Resolved: `X-Sandbox-User` ヘッダの client claim 問題
 
-- Bearer が一致すれば任意の username を名乗れる
-- owner一致チェック (activate/delete) は **善意ベース**
-
-**Mitigation**
-- Per-user token に移行（S-2と同時対処）
-- 暫定対応: API GW Lambda Authorizer で username をクレームに含むカスタムトークン形式に切り替え
+- per-user トークン(S-2)により、`verifyBearer` はクライアントが送る `X-Sandbox-User` を一切信用しなくなった
+  (ヘッダー自体も送信/読み取りされない)。owner は DynamoDB `tokens` テーブルに保存された検証済みの値のみを使う
+- 予告されていた「S-2と同時対処」の通りに解消
 
 ### A-2 🟡 Med: `scope=all` に admin 制限が無い
 
