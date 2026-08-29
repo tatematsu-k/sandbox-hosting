@@ -42,8 +42,11 @@ resource "aws_cloudfront_response_headers_policy" "secure" {
 }
 
 resource "aws_cloudfront_distribution" "cdn" {
-  enabled         = true
-  is_ipv6_enabled = true
+  enabled = true
+  # allowed_ips is a static-IPv4 allowlist (office/VPN egress addresses). Viewers on
+  # dual-stack networks default to IPv6, which always misses the allowlist, so IPv6
+  # is disabled to force viewers onto the allowlisted IPv4 path instead of failing open.
+  is_ipv6_enabled = false
   comment         = "${local.name} viewer distribution"
   http_version    = "http2and3"
   # PriceClass_200 includes Tokyo/Singapore/Seoul edges — important for ap-northeast-1 viewers.
