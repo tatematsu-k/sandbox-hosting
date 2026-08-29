@@ -31,7 +31,7 @@ features:
     - name: 社内に公開
       type: message
       callback_id: publish_to_sandbox
-      description: Publish an attached html/zip file to the sandbox
+      description: Publish an attached html/md/zip file to the sandbox
 
 oauth_config:
   scopes:

@@ -51,7 +51,7 @@ async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
   const contentType = (headers["content-type"] ?? "").toLowerCase();
   const body = readBody(event);
 
-  let kind: "html" | "zip";
+  let kind: "html" | "md" | "zip";
   let payload: Buffer;
   let pathFromJson: string | undefined;
 
@@ -59,7 +59,7 @@ async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
     kind = "zip";
     payload = body;
   } else if (contentType.includes("application/json")) {
-    let parsed: { html?: unknown; zipBase64?: unknown; path?: unknown };
+    let parsed: { html?: unknown; markdown?: unknown; zipBase64?: unknown; path?: unknown };
     try {
       parsed = JSON.parse(body.toString("utf-8")) as typeof parsed;
     } catch {
@@ -69,12 +69,18 @@ async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
     if (typeof parsed.html === "string") {
       kind = "html";
       payload = Buffer.from(parsed.html, "utf-8");
+    } else if (typeof parsed.markdown === "string") {
+      kind = "md";
+      payload = Buffer.from(parsed.markdown, "utf-8");
     } else if (typeof parsed.zipBase64 === "string") {
       kind = "zip";
       payload = Buffer.from(parsed.zipBase64, "base64");
     } else {
-      throw new BadRequest("json body must contain `html` or `zipBase64`");
+      throw new BadRequest("json body must contain `html`, `markdown`, or `zipBase64`");
     }
+  } else if (contentType.includes("text/markdown")) {
+    kind = "md";
+    payload = body;
   } else if (contentType.startsWith("text/") || contentType === "") {
     kind = "html";
     payload = body;
@@ -167,7 +173,7 @@ async function handleSlack(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
   const parsed = parseSlackText(text);
   const fileUrl = explicitFileUrl || parsed.asFileUrl;
 
-  let kind: "html" | "zip";
+  let kind: "html" | "md" | "zip";
   let body: Buffer;
 
   if (fileUrl) {
@@ -214,7 +220,7 @@ type ShortcutFileResult =
   | { ok: true; name: string; path: string; url: string }
   | { ok: false; name: string; message: string };
 
-const SUPPORTED_SLACK_EXTENSIONS = new Set(["html", "htm", "zip"]);
+const SUPPORTED_SLACK_EXTENSIONS = new Set(["html", "htm", "md", "markdown", "zip"]);
 
 function isSupportedSlackFile(file: SlackFile): file is SlackFile & { url_private: string } {
   if (!file.url_private) return false;
@@ -224,7 +230,7 @@ function isSupportedSlackFile(file: SlackFile): file is SlackFile & { url_privat
   return SUPPORTED_SLACK_EXTENSIONS.has(ext);
 }
 
-function enforceSizeLimit(kind: "html" | "zip", body: Buffer): void {
+function enforceSizeLimit(kind: "html" | "md" | "zip", body: Buffer): void {
   if (body.length === 0) throw new BadRequest("empty body");
   const limit = kind === "zip" ? MAX_ZIP_BYTES : MAX_HTML_BYTES;
   if (body.length > limit) {
@@ -326,7 +332,9 @@ async function notifyResponseUrl(url: string, text: string): Promise<void> {
   }
 }
 
-async function fetchSlackFile(url: string): Promise<{ kind: "html" | "zip"; body: Buffer }> {
+async function fetchSlackFile(
+  url: string,
+): Promise<{ kind: "html" | "md" | "zip"; body: Buffer }> {
   const headers: Record<string, string> = {};
   const slackTokenParam = process.env.SLACK_BOT_TOKEN_PARAM;
   if (slackTokenParam && url.startsWith("https://files.slack.com")) {
@@ -342,6 +350,9 @@ async function fetchSlackFile(url: string): Promise<{ kind: "html" | "zip"; body
   const body = Buffer.from(await res.arrayBuffer());
   if (ct.includes("application/zip") || url.toLowerCase().endsWith(".zip")) {
     return { kind: "zip", body };
+  }
+  if (ct.includes("text/markdown") || /\.(md|markdown)$/i.test(url)) {
+    return { kind: "md", body };
   }
   return { kind: "html", body };
 }

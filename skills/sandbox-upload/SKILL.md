@@ -6,8 +6,9 @@ description: Use when the user wants to publish, share, deploy, or preview a loc
 # Sandbox Upload
 
 Publishes HTML to the private IP-restricted sandbox host. Single HTML files
-are uploaded as-is. Directories containing `index.html` are zipped on the
-client and extracted server-side.
+are uploaded as-is. Single `.md`/`.markdown` files are uploaded as-is too —
+the server converts them to HTML before publishing. Directories containing
+`index.html` are zipped on the client and extracted server-side.
 
 ## Required environment
 
@@ -28,6 +29,9 @@ if present.
 ```bash
 # Upload single HTML (auto path)
 ./scripts/upload.sh ./report.html
+
+# Upload single Markdown (auto-converted to HTML server-side)
+./scripts/upload.sh ./report.md
 
 # Upload directory (zipped, must contain index.html at root)
 ./scripts/upload.sh ./build

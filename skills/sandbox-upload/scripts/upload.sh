@@ -106,8 +106,12 @@ if [[ -d "$TARGET" ]]; then
     --data-binary "@${tmp_zip}" \
     "${SANDBOX_BASE_URL}/upload"
 else
+  content_type="text/html; charset=utf-8"
+  case "$TARGET" in
+    *.md|*.markdown) content_type="text/markdown; charset=utf-8" ;;
+  esac
   curl "${curl_common[@]}" "${path_header[@]+"${path_header[@]}"}" -X POST \
-    -H "Content-Type: text/html; charset=utf-8" \
+    -H "Content-Type: ${content_type}" \
     --data-binary "@${TARGET}" \
     "${SANDBOX_BASE_URL}/upload"
 fi
