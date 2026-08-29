@@ -29,7 +29,7 @@ Vercel 期に比べて以下が **構造的に解消**:
 **現状**
 - API Gateway HTTP API の throttling は burst 50 / rate 25 リクエスト/秒（設定済み）
 - CloudFront 側はマネージドルール無し
-- 攻撃者が `UPLOAD_TOKEN` を入手した場合、API GW throttling 単独でしか守れない
+- 攻撃者が漏洩した per-user トークンを入手した場合、API GW throttling 単独でしか守れない
 
 **Mitigation**
 - AWS WAF v2 を CloudFront に associate → IPレートリミット & マネージドルール（Core Rule Set, KnownBadInputs）

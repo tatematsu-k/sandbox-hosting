@@ -33,7 +33,7 @@ EventBridge daily ──► Lambda (cron)
 | Method | Path | 認証 | 用途 |
 | --- | --- | --- | --- |
 | GET | `https://{cdn}/{path}/[file]` | CloudFront Function | 公開HTML/アセット配信 |
-| POST | `https://{api}/upload` | Bearer `UPLOAD_TOKEN` | Claude Code からアップロード |
+| POST | `https://{api}/upload` | Bearer `<個人トークン>`（`manage-tokens.sh issue` で発行） | Claude Code からアップロード |
 | POST | `https://{api}/list` | 同上 | サイト一覧 |
 | POST | `https://{api}/activate` | 同上 (owner一致) | 再公開 / TTLリセット |
 | POST | `https://{api}/delete` | 同上 (owner一致) | 完全削除 |

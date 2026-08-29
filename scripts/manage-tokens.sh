@@ -65,6 +65,7 @@ cmd_revoke() {
     --expression-attribute-values "$(printf '{":u":{"S":"%s"}}' "$username")" \
     --query 'Items[].tokenHash.S' \
     --output text)"
+  hashes="$(tr '\t' '\n' <<< "$hashes")"
 
   if [[ -z "$hashes" ]]; then
     echo "no tokens found for '$username'" >&2
@@ -76,6 +77,7 @@ cmd_revoke() {
     aws dynamodb delete-item \
       --table-name "$TABLE" \
       --key "$(printf '{"tokenHash":{"S":"%s"}}' "$hash")" \
+      --condition-expression 'attribute_exists(tokenHash)' \
       >/dev/null
     echo "==> Revoked token (hash: ${hash:0:12}...) for '$username'"
   done <<< "$hashes"
