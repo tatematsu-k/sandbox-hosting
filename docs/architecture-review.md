@@ -9,8 +9,8 @@
 
 | 領域 | 状態 | 主要リスク |
 | --- | --- | --- |
-| Security | 🟢 1 High, 4 Med | 単一共有 `UPLOAD_TOKEN`、API GW に WAF 未導入 |
-| Authn / Authz | 🟢 1 High, 1 Med | `X-Sandbox-User` の client claim 問題は AWS でも残る |
+| Security | 🟢 1 High, 3 Med | API GW に WAF 未導入(単一共有トークン問題は解消) |
+| Authn / Authz | 🟢 1 High, 0 Med | per-user トークンによりクライアント claim 問題を解消 |
 | SLO | 🟢 概ね良好 | 観測項目はあるが alarm 抑制設定が不足 |
 | Cost | 🟢 約 $2/mo | bandwidth tail risk は CloudFront 経由でも残る |
 | Operations | 🟡 整備中 | Terraform state 集中管理・WAF未導入が次の山場 |
@@ -36,15 +36,14 @@ Vercel 期に比べて以下が **構造的に解消**:
 - API GW にも WAF を関連付け可能
 - 月額 +$6（Web ACL $5 + ルール $1）
 
-### S-2 🟡 Med: `UPLOAD_TOKEN` は依然として単一共有秘密
+### S-2 ✅ Resolved: 単一共有 `UPLOAD_TOKEN` を per-user トークンに置き換え
 
-- SSM 化により安全に保管できるようになったが、複数ユーザー間で共有される構造は同じ
-- 漏洩時は全クライアントを一斉ローテーションする必要
-
-**Mitigation**
-- 短期: SSM パスを `/sandbox-hosting/tokens/{username}` 配下に分けて配布・検証
-- 中期: API GW Lambda Authorizer + DynamoDB 内のトークンテーブル
-- 長期: Amazon Cognito User Pool + JWT
+- DynamoDB `tokens` テーブル(PK=`sha256(token)`)にユーザーごとのトークンを保存し、
+  `verifyBearer` がハッシュ一致で検証済みの owner を返すようになった
+  (`docs/superpowers/specs/2026-08-29-per-user-tokens-design.md`)
+- 漏洩時は影響ユーザーの `manage-tokens.sh revoke <username>` だけで済み、
+  他ユーザーへの影響はない
+- `X-Sandbox-User` ヘッダーの自己申告問題(Authn/Authz 節)もこの変更で同時に解消
 
 ### S-3 🟡 Med: CloudFront Function 内の IP allowlist は デプロイ時固定
 

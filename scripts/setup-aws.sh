@@ -52,9 +52,8 @@ cat <<'EOM'
      aws ssm put-parameter --name "/sandbox-hosting/SLACK_SIGNING_SECRET" \
         --type SecureString --overwrite --value "<signing secret>"
 
-2) Note the upload token:
-     aws ssm get-parameter --name "/sandbox-hosting/UPLOAD_TOKEN" \
-        --with-decryption --query 'Parameter.Value' --output text
+2) Issue a token for yourself (and anyone else who needs one):
+     ./scripts/manage-tokens.sh issue <username>
 
 3) Configure clients:
      ./scripts/setup-client.sh
