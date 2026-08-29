@@ -26,6 +26,7 @@ locals {
     META_TABLE                 = aws_dynamodb_table.meta.name
     PUBLIC_BASE_URL            = local.effective_public_base_url
     TOKENS_TABLE               = aws_dynamodb_table.tokens.name
+    SLACK_USERS_TABLE          = aws_dynamodb_table.slack_users.name
     SLACK_SIGNING_SECRET_PARAM = aws_ssm_parameter.slack_signing_secret.name
     SLACK_BOT_TOKEN_PARAM      = aws_ssm_parameter.slack_bot_token.name
   }

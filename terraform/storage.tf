@@ -84,3 +84,18 @@ resource "aws_dynamodb_table" "tokens" {
     enabled = true
   }
 }
+
+resource "aws_dynamodb_table" "slack_users" {
+  name         = "${local.name}-slack-users"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "slackUserId"
+
+  attribute {
+    name = "slackUserId"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}

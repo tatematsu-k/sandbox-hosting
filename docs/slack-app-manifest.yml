@@ -1,0 +1,55 @@
+# Slack App Manifest for sandbox-hosting.
+#
+# Usage:
+#   1. Run `terraform output api_endpoint` and replace <API_GW_DOMAIN> below
+#      with that host (no scheme, e.g. abc123.execute-api.ap-northeast-1.amazonaws.com).
+#   2. https://api.slack.com/apps -> "Create New App" -> "From an app manifest"
+#   3. Pick the workspace, paste this file, review, and create.
+#   4. After creation, install the app to the workspace to mint the bot token,
+#      then run ./scripts/setup-slack-secrets.sh to store the signing secret
+#      and bot token in SSM. Finally, allow users with
+#      ./scripts/manage-slack-users.sh allow <slack_user_id>.
+#
+# See docs/slack-setup.md for the full walkthrough.
+
+display_information:
+  name: sandbox-hosting
+  description: Publish HTML to the private sandbox host
+  background_color: "#1a1a2e"
+
+features:
+  bot_user:
+    display_name: sandbox-hosting
+    always_online: false
+  slash_commands:
+    - command: /sandbox
+      url: https://<API_GW_DOMAIN>/slack/upload
+      description: Publish HTML to private sandbox
+      usage_hint: "[custom-path] <html or file URL>"
+      should_escape: false
+  shortcuts:
+    - name: 社内に公開
+      type: message
+      callback_id: publish_to_sandbox
+      description: Publish an attached html/zip file to the sandbox
+
+oauth_config:
+  scopes:
+    bot:
+      # Required: receives the /sandbox slash command.
+      - commands
+      # Required: users:read.email depends on this being granted too.
+      - users:read
+      # Required: resolves the uploader's email for the allowlist
+      # (scripts/manage-slack-users.sh allow).
+      - users:read.email
+      # Optional: only needed to fetch private files.slack.com zip uploads.
+      - files:read
+
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://<API_GW_DOMAIN>/slack/interactivity
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

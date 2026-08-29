@@ -4,7 +4,12 @@ import type {
   Context,
 } from "aws-lambda";
 import { Buffer } from "node:buffer";
-import { verifyBearer, verifySlack } from "@/src/lib/auth";
+import {
+  resolveSlackIdentity,
+  verifyBearer,
+  verifySlack,
+  verifySlackSignature,
+} from "@/src/lib/auth";
 import { BadRequest, HttpError, Unauthorized } from "@/src/lib/errors";
 import {
   buildPublicUrl,
@@ -31,6 +36,7 @@ export const handler = async (
     if (method === "POST" && path === "/activate") return await handleActivate(event);
     if (method === "POST" && path === "/delete") return await handleDelete(event);
     if (method === "POST" && path === "/slack/upload") return await handleSlack(event);
+    if (method === "POST" && path === "/slack/interactivity") return await handleSlackInteractivity(event);
     if (method === "GET" && path === "/healthz") return json(200, { ok: true });
     return json(404, { error: "route not found" });
   } catch (err) {
@@ -189,6 +195,135 @@ async function handleSlack(event: APIGatewayProxyEventV2): Promise<APIGatewayPro
       text: `:white_check_mark: published <${result.url}|${result.path}>`,
     }),
   };
+}
+
+type SlackFile = {
+  name?: string;
+  filetype?: string;
+  url_private?: string;
+};
+
+type SlackMessageActionPayload = {
+  callback_id?: string;
+  user?: { id?: string };
+  message?: { files?: SlackFile[] };
+  response_url?: string;
+};
+
+type ShortcutFileResult =
+  | { ok: true; name: string; path: string; url: string }
+  | { ok: false; name: string; message: string };
+
+const SUPPORTED_SLACK_EXTENSIONS = new Set(["html", "htm", "zip"]);
+
+function isSupportedSlackFile(file: SlackFile): file is SlackFile & { url_private: string } {
+  if (!file.url_private) return false;
+  const filetype = (file.filetype ?? "").toLowerCase();
+  if (SUPPORTED_SLACK_EXTENSIONS.has(filetype)) return true;
+  const ext = (file.name ?? "").toLowerCase().split(".").pop() ?? "";
+  return SUPPORTED_SLACK_EXTENSIONS.has(ext);
+}
+
+function enforceSizeLimit(kind: "html" | "zip", body: Buffer): void {
+  if (body.length === 0) throw new BadRequest("empty body");
+  const limit = kind === "zip" ? MAX_ZIP_BYTES : MAX_HTML_BYTES;
+  if (body.length > limit) {
+    throw new BadRequest(`body exceeds limit: ${body.length} > ${limit}`);
+  }
+}
+
+async function handleSlackInteractivity(
+  event: APIGatewayProxyEventV2,
+): Promise<APIGatewayProxyStructuredResultV2> {
+  const headers = normalizeHeaders(event.headers);
+  const rawBody = readBody(event).toString("utf-8");
+  await verifySlackSignature(headers, rawBody);
+
+  const params = new URLSearchParams(rawBody);
+  const payloadJson = params.get("payload");
+  if (!payloadJson) throw new BadRequest("missing payload");
+
+  let payload: SlackMessageActionPayload;
+  try {
+    payload = JSON.parse(payloadJson) as SlackMessageActionPayload;
+  } catch {
+    throw new BadRequest("invalid payload JSON");
+  }
+
+  if (payload.callback_id !== "publish_to_sandbox") return json(200, {});
+  const responseUrl = payload.response_url;
+
+  try {
+    const identity = await resolveSlackIdentity(payload.user?.id);
+    const files = (payload.message?.files ?? []).filter(isSupportedSlackFile);
+
+    if (files.length === 0) {
+      if (responseUrl) {
+        await notifyResponseUrl(
+          responseUrl,
+          ":warning: html または zip ファイルが添付されたメッセージで実行してください",
+        );
+      }
+      return json(200, {});
+    }
+
+    const results = await Promise.all(
+      files.map((file): Promise<ShortcutFileResult> => uploadOneShortcutFile(file, identity)),
+    );
+
+    if (responseUrl) await notifyResponseUrl(responseUrl, formatShortcutResults(results));
+  } catch (err) {
+    if (responseUrl) {
+      const message = err instanceof HttpError ? err.message : "internal error";
+      await notifyResponseUrl(responseUrl, `:x: ${message}`);
+    } else {
+      console.error("[sandbox/api] slack interactivity failed", err);
+    }
+  }
+
+  return json(200, {});
+}
+
+async function uploadOneShortcutFile(
+  file: SlackFile & { url_private: string },
+  identity: Awaited<ReturnType<typeof resolveSlackIdentity>>,
+): Promise<ShortcutFileResult> {
+  const name = file.name ?? "file";
+  try {
+    const fetched = await fetchSlackFile(file.url_private);
+    enforceSizeLimit(fetched.kind, fetched.body);
+    const result = await performUpload({
+      identity,
+      customPath: undefined,
+      content: { kind: fetched.kind, body: fetched.body },
+    });
+    return { ok: true, name, path: result.path, url: result.url };
+  } catch (err) {
+    const message = err instanceof HttpError ? err.message : "upload failed";
+    return { ok: false, name, message };
+  }
+}
+
+function formatShortcutResults(results: ShortcutFileResult[]): string {
+  return results
+    .map((r) =>
+      r.ok
+        ? `:white_check_mark: ${r.name} -> <${r.url}|${r.path}>`
+        : `:x: ${r.name} -> ${r.message}`,
+    )
+    .join("\n");
+}
+
+async function notifyResponseUrl(url: string, text: string): Promise<void> {
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ response_type: "ephemeral", text }),
+    });
+  } catch (err) {
+    console.error("[sandbox/api] failed to notify response_url", err);
+  }
 }
 
 async function fetchSlackFile(url: string): Promise<{ kind: "html" | "zip"; body: Buffer }> {

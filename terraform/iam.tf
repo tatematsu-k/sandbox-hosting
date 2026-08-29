@@ -73,6 +73,16 @@ data "aws_iam_policy_document" "lambda_app" {
   }
 
   statement {
+    sid = "SlackUsersTableRead"
+    actions = [
+      "dynamodb:GetItem",
+    ]
+    resources = [
+      aws_dynamodb_table.slack_users.arn,
+    ]
+  }
+
+  statement {
     sid = "SsmRead"
     actions = [
       "ssm:GetParameter",

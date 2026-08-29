@@ -48,16 +48,18 @@ terraform -chdir=terraform output
 echo
 echo "==> Next steps"
 cat <<'EOM'
-1) Populate Slack secrets manually:
-     aws ssm put-parameter --name "/sandbox-hosting/SLACK_SIGNING_SECRET" \
-        --type SecureString --overwrite --value "<signing secret>"
+1) Populate Slack secrets (signing secret + bot token):
+     ./scripts/setup-slack-secrets.sh
 
 2) Issue a token for yourself (and anyone else who needs one):
      ./scripts/manage-tokens.sh issue <username>
 
-3) Configure clients:
+3) Allow Slack users to use /sandbox (Slack user ID -> cached email):
+     ./scripts/manage-slack-users.sh allow <slack_user_id>
+
+4) Configure clients:
      ./scripts/setup-client.sh
 
-4) Verify:
+5) Verify:
      ./scripts/healthcheck.sh
 EOM

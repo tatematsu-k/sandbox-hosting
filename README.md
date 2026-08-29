@@ -37,7 +37,8 @@ EventBridge daily ──► Lambda (cron)
 | POST | `https://{api}/list` | 同上 | サイト一覧 |
 | POST | `https://{api}/activate` | 同上 (owner一致) | 再公開 / TTLリセット |
 | POST | `https://{api}/delete` | 同上 (owner一致) | 完全削除 |
-| POST | `https://{api}/slack/upload` | Slack 署名 | slash command 受け口 |
+| POST | `https://{api}/slack/upload` | Slack 署名 + user許可リスト（`manage-slack-users.sh allow` で登録） | slash command 受け口 |
+| POST | `https://{api}/slack/interactivity` | 同上 | メッセージショートカット「社内に公開」受け口 |
 
 ## ストレージレイアウト
 
@@ -49,6 +50,14 @@ DynamoDB `${META_TABLE}`:
 - PK: `path`
 - GSI `owner-index`: PK=`owner`
 - Item: `{path, owner, type, status, createdAt, updatedAt, ttlExpiresAt, files, source}`
+
+DynamoDB `${TOKENS_TABLE}`:
+- PK: `tokenHash`
+- Item: `{tokenHash, owner, createdAt}`
+
+DynamoDB `${SLACK_USERS_TABLE}`:
+- PK: `slackUserId`
+- Item: `{slackUserId, email, createdAt}`（`manage-slack-users.sh allow` 実行時にSlack APIから取得してキャッシュ）
 
 ## ローカル開発
 
@@ -80,12 +89,14 @@ apply 後、以下を手動で実施:
      --type SecureString --overwrite --value "<signing secret>"
    ```
 
-2. **（任意）Slack bot token** （files.slack.com のプライベートファイル取得時のみ必要）
+2. **Slack bot token**（`users:read.email` スコープ必須。Slack許可リスト登録に使う。
+   `files:read` を追加すると files.slack.com のプライベートファイル取得にも対応）
    ```bash
    aws ssm put-parameter --name "/sandbox-hosting/SLACK_BOT_TOKEN" \
      --type SecureString --overwrite --value "xoxb-..."
    ```
-   未設定（`REPLACE_ME` のまま）の場合、Slack 経路の zip 取得は public file のみ対応。
+   未設定（`REPLACE_ME` のまま）の場合、Slack経由のアップロードは全て拒否される
+   （許可リスト登録にBot Tokenが必要なため）。詳細は [docs/slack-setup.md](docs/slack-setup.md)。
 
 3. **利用者ごとにトークンを発行**（Claude Code クライアントに個別配布）
    ```bash
@@ -94,7 +105,15 @@ apply 後、以下を手動で実施:
    トークンは発行時に一度だけ表示される。一覧確認は `list`、失効は
    `revoke <username>`。
 
-4. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
+4. **Slackから使う利用者を許可リストに登録**（Slack user ID → メールアドレスを
+   登録時にキャッシュ。未登録ユーザーは `/sandbox` を実行できない）
+   ```bash
+   ./scripts/manage-slack-users.sh allow <slack_user_id>
+   ```
+   一覧確認は `list`、取り消しは `revoke <slack_user_id>`。詳細は
+   [docs/slack-setup.md](docs/slack-setup.md)。
+
+5. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
    ACM 証明書を us-east-1 に発行、CloudFront に紐付け（次フェーズで Terraform 拡張予定）
 
 ## 既知の制約
