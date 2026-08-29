@@ -40,7 +40,7 @@ export const handler = async (
 
 async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
   const headers = normalizeHeaders(event.headers);
-  const identity = await verifyBearer(headers["authorization"], headers["x-sandbox-user"]);
+  const identity = await verifyBearer(headers["authorization"]);
   const customPath = headers["x-sandbox-path"];
   const contentType = (headers["content-type"] ?? "").toLowerCase();
   const body = readBody(event);
@@ -92,7 +92,7 @@ async function handleUpload(event: APIGatewayProxyEventV2): Promise<APIGatewayPr
 
 async function handleList(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
   const headers = normalizeHeaders(event.headers);
-  const identity = await verifyBearer(headers["authorization"], headers["x-sandbox-user"]);
+  const identity = await verifyBearer(headers["authorization"]);
   const body = safeJsonBody<{ scope?: "mine" | "all" }>(event);
   const scope =
     body.scope ?? headers["x-sandbox-scope"] ?? "mine";
@@ -120,7 +120,7 @@ async function handleList(event: APIGatewayProxyEventV2): Promise<APIGatewayProx
 
 async function handleActivate(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
   const headers = normalizeHeaders(event.headers);
-  const identity = await verifyBearer(headers["authorization"], headers["x-sandbox-user"]);
+  const identity = await verifyBearer(headers["authorization"]);
   const { path } = safeJsonBody<{ path?: string }>(event);
   if (!path) throw new BadRequest("missing `path`");
 
@@ -139,7 +139,7 @@ async function handleActivate(event: APIGatewayProxyEventV2): Promise<APIGateway
 
 async function handleDelete(event: APIGatewayProxyEventV2): Promise<APIGatewayProxyStructuredResultV2> {
   const headers = normalizeHeaders(event.headers);
-  const identity = await verifyBearer(headers["authorization"], headers["x-sandbox-user"]);
+  const identity = await verifyBearer(headers["authorization"]);
   const { path } = safeJsonBody<{ path?: string }>(event);
   if (!path) throw new BadRequest("missing `path`");
 
