@@ -833,15 +833,30 @@ Run: `./scripts/setup-client.sh` and paste the token from Step 3 when prompted.
 Run: `./scripts/healthcheck.sh`
 Expected: `HTTP 200 OK` for the published test page, and the `list` call returns it under `owner: "tatematsu"`.
 
-- [ ] **Step 6: Verify revocation works**
+- [ ] **Step 6: Verify revocation works (with 2 tokens — this is the case the final review's Critical fix targeted)**
 
-Run: `./scripts/manage-tokens.sh issue smoke-test-user`, then immediately `./scripts/manage-tokens.sh revoke smoke-test-user`, then confirm a request using that revoked token gets `401`:
+`manage-tokens.sh revoke` used to silently no-op for a user with 2+ tokens (fixed in commit
+`7e626bc`, see `docs/superpowers/specs` ledger) — testing with only one token would not have
+caught that bug, so issue two before revoking:
+
 ```bash
-curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
-  -H "Authorization: Bearer <the revoked token>" \
-  -H "Content-Type: application/json" -d '{"scope":"mine"}' \
-  "$SANDBOX_BASE_URL/list"
+./scripts/manage-tokens.sh issue smoke-test-user   # token A
+./scripts/manage-tokens.sh issue smoke-test-user   # token B
+./scripts/manage-tokens.sh revoke smoke-test-user  # must revoke BOTH
 ```
-Expected: `401`.
+
+Then confirm requests using **both** revoked tokens get `401`:
+```bash
+for t in "<token A>" "<token B>"; do
+  curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
+    -H "Authorization: Bearer $t" \
+    -H "Content-Type: application/json" -d '{"scope":"mine"}' \
+    "$SANDBOX_BASE_URL/list"
+done
+```
+Expected: `401` for both. If either returns `200`, `revoke` regressed — do not consider the
+cutover complete until both fail. Note: `lookupOwner`'s DynamoDB read has no `ConsistentRead`,
+so a request made within roughly a second of revoking could observe stale data — if you see a
+`200` immediately after revoking, wait a moment and retry before treating it as a bug.
 
 - [ ] **Step 7: No commit needed** — this task only touches live infra state, not repo files.
