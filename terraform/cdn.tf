@@ -80,16 +80,18 @@ resource "aws_cloudfront_distribution" "cdn" {
     cloudfront_default_certificate = true
   }
 
-  # Translate S3's 403 (objects that don't exist under OAC) into a clean 404 for viewers.
+  # Avoid caching S3's 403 (objects that don't exist under OAC) or 404 errors, so a
+  # site published right after a stale error was seen becomes visible immediately.
+  # NOTE: overriding response_code to remap 403->404 would require pairing it with
+  # response_page_path (a custom error page CloudFront must serve) per the AWS API;
+  # without one, CloudFront rejects the distribution. Left as pass-through for now.
   custom_error_response {
     error_code            = 403
-    response_code         = 404
     error_caching_min_ttl = 0
   }
 
   custom_error_response {
     error_code            = 404
-    response_code         = 404
     error_caching_min_ttl = 0
   }
 }
