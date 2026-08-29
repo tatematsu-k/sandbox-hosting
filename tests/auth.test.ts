@@ -5,12 +5,17 @@ vi.mock("@/src/lib/secrets", () => ({
   getSecret: vi.fn(),
 }));
 
+vi.mock("@/src/lib/tokens", () => ({
+  hashToken: vi.fn((raw: string) => `hash:${raw}`),
+  lookupOwner: vi.fn(),
+}));
+
 vi.mock("@/src/lib/config", () => ({
   config: {
     bucket: () => "bucket",
     table: () => "table",
     publicBaseUrl: () => "https://example.com",
-    uploadTokenParam: () => "/sandbox-hosting/UPLOAD_TOKEN",
+    tokensTable: () => "tokens-table",
     slackSigningSecretParam: () => "/sandbox-hosting/SLACK_SIGNING_SECRET",
     slackBotTokenParam: () => undefined,
     region: () => "ap-northeast-1",
@@ -20,25 +25,29 @@ vi.mock("@/src/lib/config", () => ({
 const { verifyBearer, verifySlack } = await import("@/src/lib/auth");
 const { Unauthorized } = await import("@/src/lib/errors");
 const { getSecret } = await import("@/src/lib/secrets");
+const { lookupOwner } = await import("@/src/lib/tokens");
 const getSecretMock = vi.mocked(getSecret);
+const lookupOwnerMock = vi.mocked(lookupOwner);
 
 describe("verifyBearer", () => {
   beforeEach(() => {
-    getSecretMock.mockResolvedValue("secret-token");
+    lookupOwnerMock.mockImplementation(async (hash) =>
+      hash === "hash:secret-token" ? "tatematsu-k" : null,
+    );
   });
 
-  it("accepts a valid token", async () => {
-    const id = await verifyBearer("Bearer secret-token", "Tatematsu.K");
+  it("accepts a valid token and returns the stored owner", async () => {
+    const id = await verifyBearer("Bearer secret-token");
     expect(id.username).toBe("tatematsu-k");
     expect(id.source).toBe("claude-code");
   });
 
   it("rejects missing header", async () => {
-    await expect(verifyBearer(undefined, "x")).rejects.toThrow(Unauthorized);
+    await expect(verifyBearer(undefined)).rejects.toThrow(Unauthorized);
   });
 
-  it("rejects wrong token", async () => {
-    await expect(verifyBearer("Bearer wrong", "x")).rejects.toThrow(Unauthorized);
+  it("rejects a token with no matching record", async () => {
+    await expect(verifyBearer("Bearer wrong")).rejects.toThrow(Unauthorized);
   });
 });
 

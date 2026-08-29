@@ -25,7 +25,7 @@ locals {
     CONTENT_BUCKET             = aws_s3_bucket.content.bucket
     META_TABLE                 = aws_dynamodb_table.meta.name
     PUBLIC_BASE_URL            = local.effective_public_base_url
-    UPLOAD_TOKEN_PARAM         = aws_ssm_parameter.upload_token.name
+    TOKENS_TABLE               = aws_dynamodb_table.tokens.name
     SLACK_SIGNING_SECRET_PARAM = aws_ssm_parameter.slack_signing_secret.name
     SLACK_BOT_TOKEN_PARAM      = aws_ssm_parameter.slack_bot_token.name
   }

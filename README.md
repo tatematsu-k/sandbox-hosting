@@ -33,7 +33,7 @@ EventBridge daily ──► Lambda (cron)
 | Method | Path | 認証 | 用途 |
 | --- | --- | --- | --- |
 | GET | `https://{cdn}/{path}/[file]` | CloudFront Function | 公開HTML/アセット配信 |
-| POST | `https://{api}/upload` | Bearer `UPLOAD_TOKEN` | Claude Code からアップロード |
+| POST | `https://{api}/upload` | Bearer `<個人トークン>`（`manage-tokens.sh issue` で発行） | Claude Code からアップロード |
 | POST | `https://{api}/list` | 同上 | サイト一覧 |
 | POST | `https://{api}/activate` | 同上 (owner一致) | 再公開 / TTLリセット |
 | POST | `https://{api}/delete` | 同上 (owner一致) | 完全削除 |
@@ -87,11 +87,12 @@ apply 後、以下を手動で実施:
    ```
    未設定（`REPLACE_ME` のまま）の場合、Slack 経路の zip 取得は public file のみ対応。
 
-3. **`UPLOAD_TOKEN` を控える**（Claude Code クライアントに配布）
+3. **利用者ごとにトークンを発行**（Claude Code クライアントに個別配布）
    ```bash
-   aws ssm get-parameter --name "/sandbox-hosting/UPLOAD_TOKEN" \
-     --with-decryption --query 'Parameter.Value' --output text
+   ./scripts/manage-tokens.sh issue <username>
    ```
+   トークンは発行時に一度だけ表示される。一覧確認は `list`、失効は
+   `revoke <username>`。
 
 4. （任意）独自ドメインを当てる場合は `var.public_base_url` を実値で更新し、
    ACM 証明書を us-east-1 に発行、CloudFront に紐付け（次フェーズで Terraform 拡張予定）

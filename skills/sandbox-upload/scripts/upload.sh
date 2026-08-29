@@ -9,7 +9,6 @@ fi
 
 : "${SANDBOX_BASE_URL:?Set SANDBOX_BASE_URL (API GW URL, or put it in $CONFIG_FILE)}"
 : "${SANDBOX_TOKEN:?Set SANDBOX_TOKEN (or put it in $CONFIG_FILE)}"
-SANDBOX_USER="${SANDBOX_USER:-${USER:-anon}}"
 # strip trailing slashes
 SANDBOX_BASE_URL="${SANDBOX_BASE_URL%/}"
 
@@ -51,7 +50,6 @@ done
 curl_common=(
   -sS
   -H "Authorization: Bearer ${SANDBOX_TOKEN}"
-  -H "X-Sandbox-User: ${SANDBOX_USER}"
 )
 
 case "$SUBCMD" in

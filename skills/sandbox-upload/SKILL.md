@@ -15,8 +15,8 @@ Configured by the user once, e.g. in `~/.config/sandbox-hosting/env`:
 
 ```
 SANDBOX_BASE_URL=https://sandbox.example.com
-SANDBOX_TOKEN=...                # matches SSM /sandbox-hosting/UPLOAD_TOKEN
-SANDBOX_USER=tatematsu          # optional, default = $USER
+SANDBOX_TOKEN=...                # per-user token issued by an operator via
+                                  # `manage-tokens.sh issue <username>`; identifies you
 ```
 
 `scripts/upload.sh` will source `~/.config/sandbox-hosting/env` automatically

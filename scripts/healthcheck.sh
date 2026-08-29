@@ -12,7 +12,6 @@ CONFIG_FILE="${SANDBOX_CONFIG:-$HOME/.config/sandbox-hosting/env}"
 API_URL="${SANDBOX_API_URL:-${SANDBOX_BASE_URL:-}}"
 VIEW_URL="${SANDBOX_VIEW_URL:-$API_URL}"
 TOKEN="${SANDBOX_TOKEN:-}"
-USER_NAME="${SANDBOX_USER:-healthcheck}"
 
 if [[ -z "$API_URL" || -z "$TOKEN" ]]; then
   echo "ERROR: set SANDBOX_API_URL (or SANDBOX_BASE_URL) and SANDBOX_TOKEN" >&2
@@ -28,7 +27,6 @@ slug="healthcheck-$(date -u +%Y%m%d)"
 echo "==> upload custom-path $slug"
 curl -sS -X POST \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Sandbox-User: $USER_NAME" \
   -H "X-Sandbox-Path: $slug" \
   -H "Content-Type: text/html" \
   --data-binary "@$tmp_html" \
@@ -46,7 +44,6 @@ fi
 echo "==> list mine"
 curl -sS -X POST \
   -H "Authorization: Bearer $TOKEN" \
-  -H "X-Sandbox-User: $USER_NAME" \
   -H "Content-Type: application/json" \
   -d '{"scope":"mine"}' \
   "$API_URL/list" | head -c 400

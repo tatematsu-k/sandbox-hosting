@@ -3,6 +3,7 @@ import { Unauthorized } from "./errors";
 import { normalizeUsername } from "./path";
 import { config } from "./config";
 import { getSecret } from "./secrets";
+import { hashToken, lookupOwner } from "./tokens";
 
 const SLACK_TIMESTAMP_WINDOW_S = 60 * 5;
 
@@ -13,18 +14,12 @@ export type Identity = {
 
 export async function verifyBearer(
   authorization: string | undefined,
-  claimedUser: string | undefined,
 ): Promise<Identity> {
-  const expected = await getSecret(config.uploadTokenParam());
   const match = /^Bearer\s+(.+)$/i.exec(authorization ?? "");
   if (!match) throw new Unauthorized("missing bearer token");
-  if (!safeEqual(match[1].trim(), expected)) {
-    throw new Unauthorized("invalid token");
-  }
-  return {
-    username: normalizeUsername(claimedUser ?? "anon"),
-    source: "claude-code",
-  };
+  const owner = await lookupOwner(hashToken(match[1].trim()));
+  if (!owner) throw new Unauthorized("invalid token");
+  return { username: owner, source: "claude-code" };
 }
 
 export async function verifySlack(

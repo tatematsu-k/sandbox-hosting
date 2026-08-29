@@ -9,8 +9,8 @@
 
 | 領域 | 状態 | 主要リスク |
 | --- | --- | --- |
-| Security | 🟢 1 High, 4 Med | 単一共有 `UPLOAD_TOKEN`、API GW に WAF 未導入 |
-| Authn / Authz | 🟢 1 High, 1 Med | `X-Sandbox-User` の client claim 問題は AWS でも残る |
+| Security | 🟢 1 High, 2 Med | API GW に WAF 未導入(単一共有トークン問題は解消) |
+| Authn / Authz | 🟢 0 High, 1 Med | per-user トークンで client claim 問題を解消。`scope=all` の admin 制限(A-2)は未対応 |
 | SLO | 🟢 概ね良好 | 観測項目はあるが alarm 抑制設定が不足 |
 | Cost | 🟢 約 $2/mo | bandwidth tail risk は CloudFront 経由でも残る |
 | Operations | 🟡 整備中 | Terraform state 集中管理・WAF未導入が次の山場 |
@@ -29,22 +29,21 @@ Vercel 期に比べて以下が **構造的に解消**:
 **現状**
 - API Gateway HTTP API の throttling は burst 50 / rate 25 リクエスト/秒（設定済み）
 - CloudFront 側はマネージドルール無し
-- 攻撃者が `UPLOAD_TOKEN` を入手した場合、API GW throttling 単独でしか守れない
+- 攻撃者が漏洩した per-user トークンを入手した場合、API GW throttling 単独でしか守れない
 
 **Mitigation**
 - AWS WAF v2 を CloudFront に associate → IPレートリミット & マネージドルール（Core Rule Set, KnownBadInputs）
 - API GW にも WAF を関連付け可能
 - 月額 +$6（Web ACL $5 + ルール $1）
 
-### S-2 🟡 Med: `UPLOAD_TOKEN` は依然として単一共有秘密
+### S-2 ✅ Resolved: 単一共有 `UPLOAD_TOKEN` を per-user トークンに置き換え
 
-- SSM 化により安全に保管できるようになったが、複数ユーザー間で共有される構造は同じ
-- 漏洩時は全クライアントを一斉ローテーションする必要
-
-**Mitigation**
-- 短期: SSM パスを `/sandbox-hosting/tokens/{username}` 配下に分けて配布・検証
-- 中期: API GW Lambda Authorizer + DynamoDB 内のトークンテーブル
-- 長期: Amazon Cognito User Pool + JWT
+- DynamoDB `tokens` テーブル(PK=`sha256(token)`)にユーザーごとのトークンを保存し、
+  `verifyBearer` がハッシュ一致で検証済みの owner を返すようになった
+  (`docs/superpowers/specs/2026-08-29-per-user-tokens-design.md`)
+- 漏洩時は影響ユーザーの `manage-tokens.sh revoke <username>` だけで済み、
+  他ユーザーへの影響はない
+- `X-Sandbox-User` ヘッダーの自己申告問題(Authn/Authz 節)もこの変更で同時に解消
 
 ### S-3 🟡 Med: CloudFront Function 内の IP allowlist は デプロイ時固定
 
@@ -77,14 +76,11 @@ Vercel 期に比べて以下が **構造的に解消**:
 
 ## 2. Authentication / Authorization
 
-### A-1 🔴 High: `X-Sandbox-User` ヘッダは client claim のまま
+### A-1 ✅ Resolved: `X-Sandbox-User` ヘッダの client claim 問題
 
-- Bearer が一致すれば任意の username を名乗れる
-- owner一致チェック (activate/delete) は **善意ベース**
-
-**Mitigation**
-- Per-user token に移行（S-2と同時対処）
-- 暫定対応: API GW Lambda Authorizer で username をクレームに含むカスタムトークン形式に切り替え
+- per-user トークン(S-2)により、`verifyBearer` はクライアントが送る `X-Sandbox-User` を一切信用しなくなった
+  (ヘッダー自体も送信/読み取りされない)。owner は DynamoDB `tokens` テーブルに保存された検証済みの値のみを使う
+- 予告されていた「S-2と同時対処」の通りに解消
 
 ### A-2 🟡 Med: `scope=all` に admin 制限が無い
 

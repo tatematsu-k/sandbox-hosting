@@ -210,11 +210,10 @@
   <li><span class="tag good">OK</span> S3 バケットは private + OAC で CloudFront 経由のみアクセス可</li>
   <li><span class="tag good">OK</span> Slack 経路はHMAC署名検証 (5分以内)、Claude Code 経路はBearer token</li>
   <li><span class="tag good">OK</span> 秘密情報は SSM Parameter Store (SecureString / KMS暗号化) で管理</li>
-  <li><span class="tag warn">Caveat</span> <code>UPLOAD_TOKEN</code> は全クライアントで共通。漏洩したら全員でローテーション</li>
   <li><span class="tag warn">Caveat</span> API Gateway の rate limit は throttling burst 50 / rate 25 のデフォルト。WAFは未導入</li>
 </ul>
 <div class="callout warn">
-  詳細な評価は <code>docs/architecture-review.md</code> 参照。per-user token、WAF rate limit ルールが次フェーズの対応候補。
+  詳細な評価は <code>docs/architecture-review.md</code> 参照。WAF rate limit ルールが次フェーズの対応候補。
 </div>
 </section>
 
@@ -238,14 +237,14 @@ cd ..
 <h3>誤って上げてしまったとき</h3>
 <pre><code>./skills/sandbox-upload/scripts/upload.sh delete &lt;path&gt;</code></pre>
 
-<h3>UPLOAD_TOKEN 漏洩時</h3>
+<h3>トークン漏洩時</h3>
 <ol>
-  <li>SSM で再生成
-    <pre><code>aws ssm put-parameter --name /sandbox-hosting/UPLOAD_TOKEN \
-  --type SecureString --overwrite --value "$(openssl rand -hex 32)"</code></pre>
+  <li>漏洩したユーザーのトークンを失効
+    <pre><code>./scripts/manage-tokens.sh revoke &lt;username&gt;</code></pre>
   </li>
-  <li>Lambda は次回 invoke から新値を fetch する（5分キャッシュ）。即時反映したい場合は <code>aws lambda update-function-configuration</code> で env を上書きしダミー変更</li>
-  <li>全クライアントで <code>./scripts/setup-client.sh</code> を再実行</li>
+  <li>必要なら新しいトークンを発行し、本人に配布
+    <pre><code>./scripts/manage-tokens.sh issue &lt;username&gt;</code></pre>
+  </li>
   <li>不正アップロード分は <code>list scope=all</code> で確認し <code>delete</code></li>
 </ol>
 </section>
@@ -256,7 +255,7 @@ cd ..
   <thead><tr><th>Method</th><th>Path</th><th>認証</th><th>用途</th></tr></thead>
   <tbody>
     <tr><td>GET</td><td><code>https://&lt;cdn&gt;/{path}/[file]</code></td><td>CloudFront Function (IP allowlist)</td><td>公開HTML/アセット配信</td></tr>
-    <tr><td>POST</td><td><code>https://&lt;api&gt;/upload</code></td><td>Bearer <code>UPLOAD_TOKEN</code></td><td>Claude Code からアップロード</td></tr>
+    <tr><td>POST</td><td><code>https://&lt;api&gt;/upload</code></td><td>Bearer &lt;個人トークン&gt;</td><td>Claude Code からアップロード</td></tr>
     <tr><td>POST</td><td><code>https://&lt;api&gt;/list</code></td><td>同上</td><td>サイト一覧</td></tr>
     <tr><td>POST</td><td><code>https://&lt;api&gt;/activate</code></td><td>同上 (owner一致)</td><td>再公開 / TTLリセット</td></tr>
     <tr><td>POST</td><td><code>https://&lt;api&gt;/delete</code></td><td>同上 (owner一致)</td><td>完全削除</td></tr>

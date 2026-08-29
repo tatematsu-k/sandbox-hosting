@@ -69,3 +69,18 @@ resource "aws_dynamodb_table" "meta" {
     enabled = true
   }
 }
+
+resource "aws_dynamodb_table" "tokens" {
+  name         = "${local.name}-tokens"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "tokenHash"
+
+  attribute {
+    name = "tokenHash"
+    type = "S"
+  }
+
+  point_in_time_recovery {
+    enabled = true
+  }
+}
