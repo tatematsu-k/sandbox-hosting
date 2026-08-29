@@ -101,12 +101,12 @@ if [[ -d "$TARGET" ]]; then
   tmp_zip="$(mktemp -t sandbox-upload-XXXXXX.zip)"
   trap 'rm -f "$tmp_zip"' EXIT
   ( cd "$TARGET" && zip -qr "$tmp_zip" . )
-  curl "${curl_common[@]}" "${path_header[@]}" -X POST \
+  curl "${curl_common[@]}" "${path_header[@]+"${path_header[@]}"}" -X POST \
     -H "Content-Type: application/zip" \
     --data-binary "@${tmp_zip}" \
     "${SANDBOX_BASE_URL}/upload"
 else
-  curl "${curl_common[@]}" "${path_header[@]}" -X POST \
+  curl "${curl_common[@]}" "${path_header[@]+"${path_header[@]}"}" -X POST \
     -H "Content-Type: text/html; charset=utf-8" \
     --data-binary "@${TARGET}" \
     "${SANDBOX_BASE_URL}/upload"
