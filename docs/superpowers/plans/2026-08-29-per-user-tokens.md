@@ -190,12 +190,12 @@ git commit -m "infra: remove shared UPLOAD_TOKEN SSM parameter"
 
 - [ ] **Step 1: Add `tokensTable()` to `src/lib/config.ts`**
 
-Replace:
+Add a new line right after `uploadTokenParam`. Do **not** remove `uploadTokenParam` yet —
+`auth.ts` still calls it until Task 4 rewrites it; removing it now would break `npm run typecheck`
+for the rest of this task.
+
 ```ts
   uploadTokenParam: () => required("UPLOAD_TOKEN_PARAM"),
-```
-with:
-```ts
   tokensTable: () => required("TOKENS_TABLE"),
 ```
 
@@ -264,7 +264,9 @@ Expected: PASS (3 tests).
 - [ ] **Step 6: Typecheck**
 
 Run: `npm run typecheck`
-Expected: no errors. (`auth.ts` still calls the now-removed `config.uploadTokenParam()` at this point — that's fixed in Task 4, done next in the same session; if you stop here, typecheck will fail until Task 4 lands.)
+Expected: no errors. (`uploadTokenParam` is unused by anything new here but still has its one
+caller in `auth.ts`, so this is a clean, independently-typechecking commit. Task 4 removes
+`uploadTokenParam` when it removes that caller.)
 
 - [ ] **Step 7: Commit**
 
@@ -280,10 +282,12 @@ git commit -m "feat: add tokens table hash+lookup helper"
 **Files:**
 - Modify: `src/lib/auth.ts`
 - Modify: `tests/auth.test.ts`
+- Modify: `src/lib/config.ts`
 
 **Interfaces:**
 - Consumes: `hashToken`, `lookupOwner` from `src/lib/tokens.ts` (Task 3).
 - Produces: `verifyBearer(authorization: string | undefined): Promise<Identity>` — signature drops the second (`claimedUser`) parameter. Consumed by Task 5 (`src/handlers/api.ts`).
+- Removes: `config.uploadTokenParam()` (its only caller, in `auth.ts`, is removed in this task).
 
 - [ ] **Step 1: Update the failing tests in `tests/auth.test.ts`**
 
@@ -349,7 +353,8 @@ Leave the `describe("verifySlack", ...)` block below unchanged.
 - [ ] **Step 2: Run tests to verify the verifyBearer block fails**
 
 Run: `npx vitest run tests/auth.test.ts`
-Expected: FAIL — `verifyBearer` is still called with 2 args / still reads `config.uploadTokenParam()`, which no longer exists.
+Expected: FAIL — the new mock of `@/src/lib/config` has no `uploadTokenParam`, so the still-old
+`verifyBearer` throws `config.uploadTokenParam is not a function`.
 
 - [ ] **Step 3: Rewrite `verifyBearer` in `src/lib/auth.ts`**
 
@@ -413,20 +418,27 @@ export async function verifyBearer(
 
 (Leave `verifySlack` and `safeEqual` below untouched — `safeEqual` is still used by `verifySlack`.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [ ] **Step 4: Remove the now-unused `uploadTokenParam` from `src/lib/config.ts`**
+
+`auth.ts` no longer calls it after Step 3, and nothing else in the codebase does. Delete:
+```ts
+  uploadTokenParam: () => required("UPLOAD_TOKEN_PARAM"),
+```
+
+- [ ] **Step 5: Run tests to verify they pass**
 
 Run: `npx vitest run tests/auth.test.ts`
 Expected: PASS (all `verifyBearer` and `verifySlack` tests).
 
-- [ ] **Step 5: Typecheck**
+- [ ] **Step 6: Typecheck**
 
 Run: `npm run typecheck`
 Expected: errors remain only in `src/handlers/api.ts` (still calling `verifyBearer` with 2 args) — fixed in Task 5.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/auth.ts tests/auth.test.ts
+git add src/lib/auth.ts src/lib/config.ts tests/auth.test.ts
 git commit -m "feat: derive upload identity from per-user token instead of shared secret"
 ```
 
@@ -776,7 +788,12 @@ with:
      ./scripts/manage-tokens.sh issue <username>
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Verify `setup-aws.sh` still parses cleanly**
+
+Run: `bash -n scripts/setup-aws.sh && shellcheck -e SC1090 -e SC1091 scripts/setup-aws.sh`
+Expected: no output, no warnings.
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add README.md docs/architecture-review.md scripts/setup-aws.sh
