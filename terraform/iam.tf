@@ -63,6 +63,16 @@ data "aws_iam_policy_document" "lambda_app" {
   }
 
   statement {
+    sid = "TokensTableRead"
+    actions = [
+      "dynamodb:GetItem",
+    ]
+    resources = [
+      aws_dynamodb_table.tokens.arn,
+    ]
+  }
+
+  statement {
     sid = "SsmRead"
     actions = [
       "ssm:GetParameter",
