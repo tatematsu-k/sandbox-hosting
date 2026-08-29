@@ -78,7 +78,6 @@ data "aws_iam_policy_document" "lambda_app" {
       "ssm:GetParameter",
     ]
     resources = [
-      aws_ssm_parameter.upload_token.arn,
       aws_ssm_parameter.slack_signing_secret.arn,
       aws_ssm_parameter.slack_bot_token.arn,
     ]

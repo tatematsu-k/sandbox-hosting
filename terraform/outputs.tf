@@ -21,11 +21,6 @@ output "meta_table" {
   value = aws_dynamodb_table.meta.name
 }
 
-output "upload_token_param" {
-  value     = aws_ssm_parameter.upload_token.name
-  sensitive = true
-}
-
 output "tokens_table" {
   value = aws_dynamodb_table.tokens.name
 }
