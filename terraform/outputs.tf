@@ -24,3 +24,7 @@ output "meta_table" {
 output "tokens_table" {
   value = aws_dynamodb_table.tokens.name
 }
+
+output "slack_users_table" {
+  value = aws_dynamodb_table.slack_users.name
+}

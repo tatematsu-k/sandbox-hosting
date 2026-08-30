@@ -10,12 +10,17 @@ vi.mock("@/src/lib/tokens", () => ({
   lookupOwner: vi.fn(),
 }));
 
+vi.mock("@/src/lib/slack-users", () => ({
+  lookupSlackUser: vi.fn(),
+}));
+
 vi.mock("@/src/lib/config", () => ({
   config: {
     bucket: () => "bucket",
     table: () => "table",
     publicBaseUrl: () => "https://example.com",
     tokensTable: () => "tokens-table",
+    slackUsersTable: () => "slack-users-table",
     slackSigningSecretParam: () => "/sandbox-hosting/SLACK_SIGNING_SECRET",
     slackBotTokenParam: () => undefined,
     region: () => "ap-northeast-1",
@@ -26,8 +31,10 @@ const { verifyBearer, verifySlack } = await import("@/src/lib/auth");
 const { Unauthorized } = await import("@/src/lib/errors");
 const { getSecret } = await import("@/src/lib/secrets");
 const { lookupOwner } = await import("@/src/lib/tokens");
+const { lookupSlackUser } = await import("@/src/lib/slack-users");
 const getSecretMock = vi.mocked(getSecret);
 const lookupOwnerMock = vi.mocked(lookupOwner);
+const lookupSlackUserMock = vi.mocked(lookupSlackUser);
 
 describe("verifyBearer", () => {
   beforeEach(() => {
@@ -54,26 +61,66 @@ describe("verifyBearer", () => {
 describe("verifySlack", () => {
   beforeEach(() => {
     getSecretMock.mockResolvedValue("slack-secret");
+    lookupSlackUserMock.mockImplementation(async (id) => {
+      if (id === "U123") return { email: "tatematsu@giftee.co" };
+      if (id === "U456") {
+        return { email: "linked@giftee.co", linkedUsername: "tatematsu-k" };
+      }
+      return null;
+    });
   });
 
   function sign(body: string, ts: string): string {
     return `v0=${createHmac("sha256", "slack-secret").update(`v0:${ts}:${body}`).digest("hex")}`;
   }
 
-  it("accepts a valid HMAC signature", async () => {
+  it("accepts an allowlisted user and returns their cached email", async () => {
     const ts = String(Math.floor(Date.now() / 1000));
-    const body = "command=%2Fsandbox&text=hello&user_name=tatematsu";
+    const body = "command=%2Fsandbox&text=hello&user_id=U123";
     const id = await verifySlack(
       { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
       body,
     );
-    expect(id.username).toBe("tatematsu");
+    expect(id.username).toBe("tatematsu@giftee.co");
     expect(id.source).toBe("slack");
+  });
+
+  it("prefers the linked Claude Code username over the cached email", async () => {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = "user_id=U456";
+    const id = await verifySlack(
+      { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+      body,
+    );
+    expect(id.username).toBe("tatematsu-k");
+    expect(id.source).toBe("slack");
+  });
+
+  it("rejects a user not on the allowlist", async () => {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = "user_id=U999";
+    await expect(
+      verifySlack(
+        { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+        body,
+      ),
+    ).rejects.toThrow(Unauthorized);
+  });
+
+  it("rejects a request with no user_id", async () => {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = "text=hello";
+    await expect(
+      verifySlack(
+        { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+        body,
+      ),
+    ).rejects.toThrow(Unauthorized);
   });
 
   it("rejects expired timestamps", async () => {
     const ts = String(Math.floor(Date.now() / 1000) - 60 * 10);
-    const body = "user_name=tatematsu";
+    const body = "user_id=U123";
     await expect(
       verifySlack(
         { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
@@ -83,16 +130,16 @@ describe("verifySlack", () => {
   });
 
   it("rejects when required headers are missing", async () => {
-    await expect(verifySlack({}, "user_name=x")).rejects.toThrow(Unauthorized);
+    await expect(verifySlack({}, "user_id=U123")).rejects.toThrow(Unauthorized);
   });
 
   it("rejects tampered body", async () => {
     const ts = String(Math.floor(Date.now() / 1000));
-    const body = "user_name=tatematsu";
+    const body = "user_id=U123";
     await expect(
       verifySlack(
         { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
-        "user_name=evil",
+        "user_id=U999",
       ),
     ).rejects.toThrow(Unauthorized);
   });

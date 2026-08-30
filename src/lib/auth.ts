@@ -1,8 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { Unauthorized } from "./errors";
-import { normalizeUsername } from "./path";
 import { config } from "./config";
 import { getSecret } from "./secrets";
+import { lookupSlackUser } from "./slack-users";
 import { hashToken, lookupOwner } from "./tokens";
 
 const SLACK_TIMESTAMP_WINDOW_S = 60 * 5;
@@ -22,10 +22,10 @@ export async function verifyBearer(
   return { username: owner, source: "claude-code" };
 }
 
-export async function verifySlack(
+export async function verifySlackSignature(
   headers: Record<string, string | undefined>,
   rawBody: string,
-): Promise<Identity> {
+): Promise<void> {
   const secret = await getSecret(config.slackSigningSecretParam());
   const ts = headers["x-slack-request-timestamp"];
   const sig = headers["x-slack-signature"];
@@ -43,10 +43,26 @@ export async function verifySlack(
   if (!safeEqual(computed, sig)) {
     throw new Unauthorized("invalid Slack signature");
   }
+}
 
+export async function resolveSlackIdentity(
+  slackUserId: string | null | undefined,
+): Promise<Identity> {
+  if (!slackUserId) throw new Unauthorized("missing Slack user_id");
+
+  const user = await lookupSlackUser(slackUserId);
+  if (!user) throw new Unauthorized("Slack user not allowlisted");
+
+  return { username: user.linkedUsername ?? user.email, source: "slack" };
+}
+
+export async function verifySlack(
+  headers: Record<string, string | undefined>,
+  rawBody: string,
+): Promise<Identity> {
+  await verifySlackSignature(headers, rawBody);
   const params = new URLSearchParams(rawBody);
-  const rawUser = params.get("user_name") ?? params.get("user_id") ?? "anon";
-  return { username: normalizeUsername(rawUser), source: "slack" };
+  return resolveSlackIdentity(params.get("user_id"));
 }
 
 function safeEqual(a: string, b: string): boolean {

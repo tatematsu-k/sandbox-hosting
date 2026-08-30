@@ -1,6 +1,7 @@
 import type { Identity } from "./auth";
 import { config } from "./config";
 import { BadRequest } from "./errors";
+import { mdToHtml } from "./markdown";
 import {
   computeTtl,
   deleteMeta,
@@ -26,7 +27,10 @@ import { extractZip, type ExtractedFile } from "./zip";
 export type UploadInput = {
   identity: Identity;
   customPath?: string | null;
-  content: { kind: "html"; body: Buffer } | { kind: "zip"; body: Buffer };
+  content:
+    | { kind: "html"; body: Buffer }
+    | { kind: "md"; body: Buffer }
+    | { kind: "zip"; body: Buffer };
 };
 
 export type UploadResult = {
@@ -64,7 +68,10 @@ export async function performUpload(input: UploadInput): Promise<UploadResult> {
       : [
           {
             relativePath: "index.html",
-            buffer: input.content.body,
+            buffer:
+              input.content.kind === "md"
+                ? Buffer.from(mdToHtml(input.content.body.toString("utf-8")), "utf-8")
+                : input.content.body,
             contentType: "text/html; charset=utf-8",
           },
         ];
