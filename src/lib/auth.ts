@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { Unauthorized } from "./errors";
 import { config } from "./config";
 import { getSecret } from "./secrets";
-import { lookupEmail } from "./slack-users";
+import { lookupSlackUser } from "./slack-users";
 import { hashToken, lookupOwner } from "./tokens";
 
 const SLACK_TIMESTAMP_WINDOW_S = 60 * 5;
@@ -50,10 +50,10 @@ export async function resolveSlackIdentity(
 ): Promise<Identity> {
   if (!slackUserId) throw new Unauthorized("missing Slack user_id");
 
-  const email = await lookupEmail(slackUserId);
-  if (!email) throw new Unauthorized("Slack user not allowlisted");
+  const user = await lookupSlackUser(slackUserId);
+  if (!user) throw new Unauthorized("Slack user not allowlisted");
 
-  return { username: email, source: "slack" };
+  return { username: user.linkedUsername ?? user.email, source: "slack" };
 }
 
 export async function verifySlack(

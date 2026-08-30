@@ -57,7 +57,7 @@ DynamoDB `${TOKENS_TABLE}`:
 
 DynamoDB `${SLACK_USERS_TABLE}`:
 - PK: `slackUserId`
-- Item: `{slackUserId, email, createdAt}`（`manage-slack-users.sh allow` 実行時にSlack APIから取得してキャッシュ）
+- Item: `{slackUserId, email, createdAt, linkedUsername?}`（`email`は`manage-slack-users.sh allow`実行時にSlack APIから取得してキャッシュ。`linkedUsername`は`link`コマンドで設定する任意項目で、設定されていればSlackアップロードの`owner`はこちらを使う）
 
 ## ローカル開発
 

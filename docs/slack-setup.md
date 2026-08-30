@@ -110,6 +110,21 @@ DynamoDB にキャッシュする。以後、この Slack ユーザーがアッ�
 メールアドレスは登録時に一度だけ取得してキャッシュする（都度 Slack API は叩かない）。
 本人のメールアドレスが変わった場合は `revoke` してから再度 `allow` する。
 
+### Claude Code トークンとの紐付け（任意）
+
+Slackと `manage-tokens.sh issue` で発行した Claude Code のusernameを紐付けると、
+Slack経由でアップロードしたサイトの `owner` がキャッシュ済みメールアドレスではなく
+そのusernameになり、Claude Code側の `upload.sh list` にも同じ一覧として出てくる
+ようになる。
+
+```bash
+./scripts/manage-slack-users.sh link U0123ABCD tatematsu-k
+./scripts/manage-slack-users.sh unlink U0123ABCD  # 紐付け解除（表示はメールに戻る）
+```
+
+紐付け前にアップロード済みのサイトの `owner` は遡って変わらない（以後のアップロード
+のみ反映される）。
+
 ## 6. 使い方(slash command)
 
 ```

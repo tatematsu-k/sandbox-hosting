@@ -11,7 +11,7 @@ vi.mock("@/src/lib/tokens", () => ({
 }));
 
 vi.mock("@/src/lib/slack-users", () => ({
-  lookupEmail: vi.fn(),
+  lookupSlackUser: vi.fn(),
 }));
 
 vi.mock("@/src/lib/config", () => ({
@@ -31,10 +31,10 @@ const { verifyBearer, verifySlack } = await import("@/src/lib/auth");
 const { Unauthorized } = await import("@/src/lib/errors");
 const { getSecret } = await import("@/src/lib/secrets");
 const { lookupOwner } = await import("@/src/lib/tokens");
-const { lookupEmail } = await import("@/src/lib/slack-users");
+const { lookupSlackUser } = await import("@/src/lib/slack-users");
 const getSecretMock = vi.mocked(getSecret);
 const lookupOwnerMock = vi.mocked(lookupOwner);
-const lookupEmailMock = vi.mocked(lookupEmail);
+const lookupSlackUserMock = vi.mocked(lookupSlackUser);
 
 describe("verifyBearer", () => {
   beforeEach(() => {
@@ -61,9 +61,13 @@ describe("verifyBearer", () => {
 describe("verifySlack", () => {
   beforeEach(() => {
     getSecretMock.mockResolvedValue("slack-secret");
-    lookupEmailMock.mockImplementation(async (id) =>
-      id === "U123" ? "tatematsu@giftee.co" : null,
-    );
+    lookupSlackUserMock.mockImplementation(async (id) => {
+      if (id === "U123") return { email: "tatematsu@giftee.co" };
+      if (id === "U456") {
+        return { email: "linked@giftee.co", linkedUsername: "tatematsu-k" };
+      }
+      return null;
+    });
   });
 
   function sign(body: string, ts: string): string {
@@ -78,6 +82,17 @@ describe("verifySlack", () => {
       body,
     );
     expect(id.username).toBe("tatematsu@giftee.co");
+    expect(id.source).toBe("slack");
+  });
+
+  it("prefers the linked Claude Code username over the cached email", async () => {
+    const ts = String(Math.floor(Date.now() / 1000));
+    const body = "user_id=U456";
+    const id = await verifySlack(
+      { "x-slack-request-timestamp": ts, "x-slack-signature": sign(body, ts) },
+      body,
+    );
+    expect(id.username).toBe("tatematsu-k");
     expect(id.source).toBe("slack");
   });
 

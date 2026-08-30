@@ -7,10 +7,16 @@ const client = DynamoDBDocumentClient.from(raw, {
   marshallOptions: { removeUndefinedValues: true },
 });
 
-export async function lookupEmail(slackUserId: string): Promise<string | null> {
+export type SlackUser = {
+  email: string;
+  linkedUsername?: string;
+};
+
+export async function lookupSlackUser(slackUserId: string): Promise<SlackUser | null> {
   const res = await client.send(
     new GetCommand({ TableName: config.slackUsersTable(), Key: { slackUserId } }),
   );
-  const email = (res.Item as { email?: string } | undefined)?.email;
-  return email ?? null;
+  const item = res.Item as { email?: string; linkedUsername?: string } | undefined;
+  if (!item?.email) return null;
+  return { email: item.email, linkedUsername: item.linkedUsername };
 }
